@@ -46,6 +46,9 @@ def notion_api(method, endpoint, payload=None):
             resp = requests.delete(url, headers=HEADERS, timeout=20)
         else:
             resp = requests.get(url, headers=HEADERS, timeout=20)
+        # 简单的错误打印，方便调试
+        if resp.status_code >= 400:
+            print(f"⚠️ Notion API Error {resp.status_code}: {resp.text}")
         return resp.json()
     except Exception as e:
         print(f"⚠️ API 请求异常: {e}")
@@ -90,7 +93,7 @@ def get_stock_data(ticker):
         alert = True
         alert_msg = f"🚨 极端换手 {turnover:.1%}"
 
-    # --- 2. 智能文案生成 (Doctor's Comment) ---
+    # --- 2. 智能文案生成 ---
     # A. PCR 解读
     pcr_desc = "情绪中性"
     if pcr > 0:
@@ -110,14 +113,12 @@ def get_stock_data(ticker):
         rsi_desc = "超卖区"
         tags.append({"name": "💎RSI超卖", "color": "green"})
 
-    # C. 自动生成点评 (核心逻辑) ### CHANGED HERE ###
+    # C. 自动生成点评
     commentary = "👨‍⚕️ 医生点评: "
     
-    # 趋势判断
     if price > ma200: commentary += "长期趋势向上，"
     else: commentary += "长期趋势走弱，"
     
-    # 风险提示
     risk_factors = []
     if rsi > 75: risk_factors.append("RSI过热")
     if pcr > 0 and pcr < 0.6: risk_factors.append("散户情绪过于狂热")
@@ -144,14 +145,14 @@ def get_stock_data(ticker):
         "source": source,
         "alert": alert, "alert_msg": alert_msg,
         "max_pain": max_pain,
-        "rsi": rsi, "rsi_desc": rsi_desc, # 传递描述
-        "pcr": pcr, "pcr_desc": pcr_desc, # 传递描述
+        "rsi": rsi, "rsi_desc": rsi_desc,
+        "pcr": pcr, "pcr_desc": pcr_desc,
         "tags": tags,
-        "commentary": commentary # 传递点评
+        "commentary": commentary
     }
 
 def sync_notion_data():
-    print("🚀 启动 Notion 同步 (医生点评版)...")
+    print("🚀 启动 Notion 同步 (修复版)...")
     
     # 1. 扫描
     print("📋 [1/3] 扫描 Notion...")
@@ -188,31 +189,57 @@ def sync_notion_data():
             "Tags": {"multi_select": data['tags']}
         }
         
-        # ### CHANGED HERE: 重新排版，增加可读性 ###
-        # 第一行：价格 + 止损
-        line1 = f"💰 现价: ${data['price']} | 🛑 动态止损: ${data['stop']} (3ATR)"
-        
-        # 第二行：情绪指标 (RSI + PCR)
+        # --- 构造 Rich Text (安全版) ---
+        # 只有当内容不为空时，才加入列表，防止 API 报错
+        rich_text_list = []
+
+        # Line 1
+        line1 = f"💰 现价: ${data['price']} | 🛑 动态止损: ${data['stop']} (3ATR)\n"
+        rich_text_list.append({"type": "text", "text": {"content": line1}})
+
+        # Line 2
         pcr_info = f"🐂 PCR: {data['pcr']} ({data['pcr_desc']})" if data['pcr'] else "PCR: --"
         rsi_info = f"📊 RSI: {data['rsi']} ({data['rsi_desc']})"
-        line2 = f"{rsi_info} | {pcr_info}"
-        
-        # 第三行：痛点 + 换手
+        line2 = f"{rsi_info} | {pcr_info}\n"
+        rich_text_list.append({"type": "text", "text": {"content": line2}})
+
+        # Line 3
         pain_info = f"🎯 痛点: ${data['max_pain']} (庄家目标)" if data['max_pain'] else "痛点: --"
         vol_info = f"📈 换手: {data['turnover']}%"
-        line3 = f"{pain_info} | {vol_info}"
-        
+        line3 = f"{pain_info} | {vol_info}\n"
+        rich_text_list.append({"type": "text", "text": {"content": line3}})
+
+        # 医生点评 (灰色斜体)
+        if data['commentary']:
+            rich_text_list.append({
+                "type": "text", 
+                "text": {
+                    "content": "\n" + data['commentary'] + "\n", 
+                    "annotations": {"color": "gray", "italic": True}
+                }
+            })
+
+        # 底部信息
+        rich_text_list.append({
+            "type": "text", 
+            "text": {
+                "content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n", 
+                "annotations": {"color": "gray"}
+            }
+        })
+
+        # 警报信息 (仅当有警报时添加)
+        if data['alert'] and data['alert_msg']:
+            rich_text_list.append({
+                "type": "text", 
+                "text": {
+                    "content": data['alert_msg'], 
+                    "annotations": {"color": "red"}
+                }
+            })
+
         children_blocks = [
-            {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [
-                {"type": "text", "text": {"content": line1 + "\n"}},
-                {"type": "text", "text": {"content": line2 + "\n"}},
-                {"type": "text", "text": {"content": line3 + "\n"}},
-                # 医生点评 (灰色斜体，突出显示)
-                {"type": "text", "text": {"content": "\n" + data['commentary'] + "\n", "annotations": {"color": "gray", "italic": True}}},
-                # 底部信息
-                {"type": "text", "text": {"content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n", "annotations": {"color": "gray"}}},
-                {"type": "text", "text": {"content": f"{data['alert_msg']}" if data['alert'] else "", "annotations": {"color": "red"}}}
-            ]}}
+            {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rich_text_list}}
         ]
 
         if ticker in existing_pages:
