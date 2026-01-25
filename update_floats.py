@@ -1,63 +1,85 @@
 import os
 import json
 import time
-import re  # 👈 导入手术刀工具 (正则表达式)
-from firecrawl import FirecrawlApp
+import re
+import requests # 👈 我们直接用 requests，不再依赖 firecrawl 库
 
 # --- 配置区 ---
 STOCKS_FILE = "stocks.txt"
 DATA_FILE = "float_data.json"
-
-# 初始化 Firecrawl (需要你在 Secrets 里配置了 FIRECRAWL_API_KEY)
-app = FirecrawlApp(api_key=os.environ.get("FIRECRAWL_API_KEY"))
+# 从环境变量获取 Key，确保你在 GitHub Secrets 里配置了 FIRECRAWL_API_KEY
+API_KEY = os.environ.get("FIRECRAWL_API_KEY")
 
 def load_stocks():
     if os.path.exists(STOCKS_FILE):
         with open(STOCKS_FILE, "r") as f:
             return [l.strip().upper() for l in f if l.strip()]
-    return ["RDW", "RCAT", "PLTR", "TSLA", "NVDA", "AMD", "AAPL"]
+    return ["RDW", "RCAT", "PLTR"]
 
-def fetch_via_firecrawl(ticker):
-    print(f"🕷️ Firecrawl 正在出击: {ticker}...", end="")
+def fetch_via_direct_api(ticker):
+    print(f"🕷️ [直连模式] 抓取 {ticker}...", end="")
     
+    if not API_KEY:
+        print(" ❌ 错误: 未配置 FIRECRAWL_API_KEY")
+        return None
+
     url = f"https://finviz.com/quote.ashx?t={ticker}"
     
+    # 构造请求头
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    # 构造数据包 (参考了你的截图，加了强制刷新)
+    payload = {
+        "url": url,
+        "formats": ["markdown"],
+        "onlyMainContent": False,
+        "mobile": False,
+        "maxAge": 0  # 👈 强制不读缓存，要最新的
+    }
+    
     try:
-        # 1. 【抓取】让 Firecrawl 把网页变成 Markdown 文字
-        scrape_result = app.scrape_url(url, params={'formats': ['markdown']})
+        # 直接发送 HTTP POST 请求
+        response = requests.post(
+            "https://api.firecrawl.dev/v1/scrape",
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
         
-        # 拿到那一大坨文字
-        markdown_text = scrape_result['markdown']
-        
-        # 2. 【定位与提取】使用正则手术刀
-        # 它的意思是：寻找 "Shs Float" -> 竖线 -> 数字(捕获) -> 单位M或B(捕获)
-        match = re.search(r"Shs Float\s*\|\s*([\d\.]+)([BM])", markdown_text)
-        
-        if match:
-            num_str = match.group(1) # 拿到第一个括号里的内容：85.23
-            unit = match.group(2)    # 拿到第二个括号里的内容：M
+        if response.status_code == 200:
+            data = response.json()
+            # 兼容不同的返回结构
+            md = data.get('data', {}).get('markdown', '') or data.get('markdown', '')
             
-            # 3. 【数据清洗】把 "M" 变成 1000000
-            multiplier = 1000000 if unit == 'M' else 1000000000
-            float_val = float(num_str) * multiplier
-            
-            print(f" ✅ 捕获成功: {float_val/1000000:.2f}M")
-            return float_val
+            # --- 正则匹配 ---
+            match = re.search(r"(?i)Shs Float\s*\|\s*([\d\.]+)([BM])", md)
+            if match:
+                num = float(match.group(1))
+                unit = match.group(2).upper()
+                val = num * (1000000 if unit == 'M' else 1000000000)
+                print(f" ✅ 成功: {val/1000000:.2f}M")
+                return val
+            else:
+                print(" ❌ 内容抓到了但没找到 Shs Float")
+                # print(md[:200]) # 调试用
+        elif response.status_code == 401:
+            print(" ❌ 权限错误: API Key 无效！请检查 Secrets。")
         else:
-            print(" ❌ 没找到 'Shs Float' 字段")
-            # 调试技巧：如果你想知道 Firecrawl 到底抓回了什么，可以把下面这行注释取消掉
-            # print(markdown_text[:500]) 
+            print(f" ❌ 请求失败: HTTP {response.status_code}")
             
     except Exception as e:
-        print(f" ❌ Firecrawl 报错: {e}")
+        print(f" ❌ 连接异常: {e}")
         
     return None
 
 if __name__ == "__main__":
-    print("🚀 启动 Firecrawl 增强版搬运工...")
+    print("🚀 启动精准数据更新 (HTTP 直连版)...")
     
-    # 读取旧数据
     database = {}
+    # 读取旧数据保留
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
             try: database = json.load(f)
@@ -65,18 +87,14 @@ if __name__ == "__main__":
             
     stock_list = load_stocks()
     
-    # 开始循环抓取
     for ticker in stock_list:
-        val = fetch_via_firecrawl(ticker)
-        
+        val = fetch_via_direct_api(ticker)
         if val:
             database[ticker] = val
             
-        # 礼貌性休息 2 秒，虽然 Firecrawl 很强，但别太频繁
-        time.sleep(2)
+        time.sleep(1) # 礼貌请求
 
-    # 保存结果
     with open(DATA_FILE, "w") as f:
         json.dump(database, f, indent=4)
     
-    print(f"🎉 更新完成！Firecrawl 已将精准数据写入 {DATA_FILE}")
+    print(f"🎉 更新完成！")
