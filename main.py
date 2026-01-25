@@ -46,7 +46,7 @@ def notion_api(method, endpoint, payload=None):
             resp = requests.delete(url, headers=HEADERS, timeout=20)
         else:
             resp = requests.get(url, headers=HEADERS, timeout=20)
-        # 简单的错误打印，方便调试
+        
         if resp.status_code >= 400:
             print(f"⚠️ Notion API Error {resp.status_code}: {resp.text}")
         return resp.json()
@@ -152,7 +152,7 @@ def get_stock_data(ticker):
     }
 
 def sync_notion_data():
-    print("🚀 启动 Notion 同步 (修复版)...")
+    print("🚀 启动 Notion 同步 (JSON修复版)...")
     
     # 1. 扫描
     print("📋 [1/3] 扫描 Notion...")
@@ -189,8 +189,7 @@ def sync_notion_data():
             "Tags": {"multi_select": data['tags']}
         }
         
-        # --- 构造 Rich Text (安全版) ---
-        # 只有当内容不为空时，才加入列表，防止 API 报错
+        # --- 构造 Rich Text (修复了 annotations 位置) ---
         rich_text_list = []
 
         # Line 1
@@ -214,28 +213,28 @@ def sync_notion_data():
             rich_text_list.append({
                 "type": "text", 
                 "text": {
-                    "content": "\n" + data['commentary'] + "\n", 
-                    "annotations": {"color": "gray", "italic": True}
-                }
+                    "content": "\n" + data['commentary'] + "\n"
+                },
+                "annotations": {"color": "gray", "italic": True} ### CHANGED HERE: 移到了外面 ###
             })
 
         # 底部信息
         rich_text_list.append({
             "type": "text", 
             "text": {
-                "content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n", 
-                "annotations": {"color": "gray"}
-            }
+                "content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n"
+            },
+            "annotations": {"color": "gray"} ### CHANGED HERE: 移到了外面 ###
         })
 
-        # 警报信息 (仅当有警报时添加)
+        # 警报信息
         if data['alert'] and data['alert_msg']:
             rich_text_list.append({
                 "type": "text", 
                 "text": {
-                    "content": data['alert_msg'], 
-                    "annotations": {"color": "red"}
-                }
+                    "content": data['alert_msg']
+                },
+                "annotations": {"color": "red"} ### CHANGED HERE: 移到了外面 ###
             })
 
         children_blocks = [
