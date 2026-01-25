@@ -1,9 +1,9 @@
 name: Daily Stock Scan
 
 on:
-  workflow_dispatch:  # 允许手动点击运行
+  workflow_dispatch:
   schedule:
-    - cron: '30 20 * * 1-5' # 每天收盘后自动运行
+    - cron: '30 20 * * 1-5'
 
 jobs:
   run_scan:
@@ -18,20 +18,20 @@ jobs:
       with:
         python-version: '3.9'
 
-    # 👇👇👇 这里的修改是决定生死的！ 👇👇👇
+    # 👇👇👇 之前的罪魁祸首就在这里！👇👇👇
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # 必须是 notion-client，绝对不能写成 notion
+        # 以前写的是 notion (错)，现在必须是 notion-client (对)
         pip install requests yfinance notion-client
 
-    # 先运行搬运工 (抓取 RDW 数据)
+    # 1. 先抓数据 (制造 JSON)
     - name: Run Data Updater (Firecrawl)
       env:
         FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
       run: python update_floats.py
 
-    # 再运行主程序 (清理重复项 + 推送)
+    # 2. 再清理并推送 (读取 JSON)
     - name: Run Main Logic
       env:
         NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
