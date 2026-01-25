@@ -1,82 +1,62 @@
 import os
 import json
 import time
-import requests
-from bs4 import BeautifulSoup
+import re  # 👈 导入手术刀工具 (正则表达式)
+from firecrawl import FirecrawlApp
 
 # --- 配置区 ---
-ALPHA_KEY = os.environ.get("ALPHA_VANTAGE_KEY")
 STOCKS_FILE = "stocks.txt"
 DATA_FILE = "float_data.json"
 
+# 初始化 Firecrawl (需要你在 Secrets 里配置了 FIRECRAWL_API_KEY)
+app = FirecrawlApp(api_key=os.environ.get("FIRECRAWL_API_KEY"))
+
 def load_stocks():
-    # 读取股票清单
     if os.path.exists(STOCKS_FILE):
         with open(STOCKS_FILE, "r") as f:
             return [l.strip().upper() for l in f if l.strip()]
     return ["RDW", "RCAT", "PLTR", "TSLA", "NVDA", "AMD", "AAPL"]
 
-# --- 🕷️ 技能1：爬取 Finviz (数据最准，优先使用) ---
-def fetch_from_finviz(ticker):
+def fetch_via_firecrawl(ticker):
+    print(f"🕷️ Firecrawl 正在出击: {ticker}...", end="")
+    
     url = f"https://finviz.com/quote.ashx?t={ticker}"
-    # 伪装成浏览器，防止被拦截
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     
     try:
-        print(f"🕷️ 尝试爬取 Finviz: {ticker}...", end="")
-        r = requests.get(url, headers=headers, timeout=10)
+        # 1. 【抓取】让 Firecrawl 把网页变成 Markdown 文字
+        scrape_result = app.scrape_url(url, params={'formats': ['markdown']})
         
-        if r.status_code == 200:
-            soup = BeautifulSoup(r.text, 'html.parser')
-            # 在网页里找 "Shs Float" 这一行
-            for row in soup.find_all('tr'):
-                cells = row.find_all('td')
-                for i, cell in enumerate(cells):
-                    if "Shs Float" in cell.text:
-                        # 找到了！下一个格子就是数字
-                        val_str = cells[i+1].text.strip()
-                        
-                        # 处理单位 (85.23M -> 85230000)
-                        multiplier = 1
-                        if val_str.endswith('M'):
-                            multiplier = 1000000
-                            val_str = val_str[:-1]
-                        elif val_str.endswith('B'):
-                            multiplier = 1000000000
-                            val_str = val_str[:-1]
-                        elif val_str == '-':
-                            print(" ⚠️ Finviz 无数据")
-                            return None
-                            
-                        float_val = float(val_str) * multiplier
-                        print(f" ✅ 成功: {float_val/1000000:.2f}M")
-                        return float_val
-        print(" ❌ 没找到数据")
-    except Exception as e:
-        print(f" ❌ 爬取错误: {e}")
-    return None
-
-# --- 📡 技能2：问 API (作为备胎) ---
-def fetch_from_alpha(ticker):
-    if not ALPHA_KEY: return None
-    url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={ALPHA_KEY}"
-    try:
-        print(f"📡 尝试 AlphaVantage API: {ticker}...", end="")
-        r = requests.get(url)
-        data = r.json()
+        # 拿到那一大坨文字
+        markdown_text = scrape_result['markdown']
         
-        if "SharesFloat" in data and data["SharesFloat"] != "0" and data["SharesFloat"] != "None":
-            float_val = float(data["SharesFloat"])
-            print(f" ✅ 成功: {float_val/1000000:.2f}M")
+        # 2. 【定位与提取】使用正则手术刀
+        # 它的意思是：寻找 "Shs Float" -> 竖线 -> 数字(捕获) -> 单位M或B(捕获)
+        match = re.search(r"Shs Float\s*\|\s*([\d\.]+)([BM])", markdown_text)
+        
+        if match:
+            num_str = match.group(1) # 拿到第一个括号里的内容：85.23
+            unit = match.group(2)    # 拿到第二个括号里的内容：M
+            
+            # 3. 【数据清洗】把 "M" 变成 1000000
+            multiplier = 1000000 if unit == 'M' else 1000000000
+            float_val = float(num_str) * multiplier
+            
+            print(f" ✅ 捕获成功: {float_val/1000000:.2f}M")
             return float_val
+        else:
+            print(" ❌ 没找到 'Shs Float' 字段")
+            # 调试技巧：如果你想知道 Firecrawl 到底抓回了什么，可以把下面这行注释取消掉
+            # print(markdown_text[:500]) 
+            
     except Exception as e:
-        print(f" ❌ 失败: {e}")
+        print(f" ❌ Firecrawl 报错: {e}")
+        
     return None
 
 if __name__ == "__main__":
-    print("🚀 启动超级搬运工 (Finviz + AlphaVantage)...")
+    print("🚀 启动 Firecrawl 增强版搬运工...")
     
-    # 1. 读取旧数据
+    # 读取旧数据
     database = {}
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
@@ -84,29 +64,19 @@ if __name__ == "__main__":
             except: pass
             
     stock_list = load_stocks()
-    print(f"📋 清单: {stock_list}")
     
-    # 2. 遍历抓取
+    # 开始循环抓取
     for ticker in stock_list:
-        # 优先爬 Finviz
-        val = fetch_from_finviz(ticker)
+        val = fetch_via_firecrawl(ticker)
         
-        # 如果 Finviz 失败，才去问 API
-        if not val:
-            val = fetch_from_alpha(ticker)
-            if val:
-                # API 用了就要休息，防封号
-                print("⏳ API 冷却 15秒...")
-                time.sleep(15)
-        else:
-            # 爬虫只需要稍微休息一下
-            time.sleep(2)
-            
         if val:
             database[ticker] = val
+            
+        # 礼貌性休息 2 秒，虽然 Firecrawl 很强，但别太频繁
+        time.sleep(2)
 
-    # 3. 保存结果
+    # 保存结果
     with open(DATA_FILE, "w") as f:
         json.dump(database, f, indent=4)
     
-    print(f"🎉 更新完成！数据已保存到 {DATA_FILE}")
+    print(f"🎉 更新完成！Firecrawl 已将精准数据写入 {DATA_FILE}")
