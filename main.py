@@ -54,7 +54,7 @@ def notion_api(method, endpoint, payload=None):
 def get_stock_data(ticker):
     if ticker not in DAILY_CACHE: return None
     
-    md = DAILY_CACHE[ticker] # md = market_data
+    md = DAILY_CACHE[ticker]
     share_float = FLOAT_DB.get(ticker, 0)
     source = "🔥本地库" if ticker in FLOAT_DB else "⚠️未知"
     
@@ -62,65 +62,98 @@ def get_stock_data(ticker):
     price = md['price']
     ma200 = md.get('ma200', price)
     max_pain = md.get('max_pain')
-    
-    # ### CHANGED HERE: 读取新指标 ###
     rsi = md.get('rsi', 50)
     atr = md.get('atr', 0)
     pcr = md.get('pcr', 0)
-    
     turnover = (md['volume'] / share_float) if share_float else 0
     
-    # --- 筛选逻辑 ---
+    # --- 1. 状态判定 ---
     status = "L1-初选池"
     alert = False
     alert_msg = ""
-    tags = [] # 新增标签列表
+    tags = []
     
-    # L2: 趋势或放量
+    # L2 逻辑
     if price > ma200 or md.get('vol_ratio', 0) > 2.0:
         status = "L2-观察池"
         
-    # L3: 痛点偏离
+    # L3 逻辑
+    pain_deviation = 0
     if max_pain:
-        deviation = abs(price - max_pain) / max_pain
-        if deviation > 0.2:
+        pain_deviation = (price - max_pain) / max_pain
+        if abs(pain_deviation) > 0.2:
             status = "L3-核心池"
             alert = True
-            alert_msg = f"⚡ 偏离痛点 {deviation:.0%} (Pain:${max_pain})"
+            alert_msg = f"⚡ 偏离痛点 {abs(pain_deviation):.0%} (Pain:${max_pain})"
     
-    # 极端换手
     if turnover > 0.5:
         alert = True
         alert_msg = f"🚨 极端换手 {turnover:.1%}"
 
-    # ### CHANGED HERE: 智能标签逻辑 ###
-    tags.append({"name": status})
+    # --- 2. 智能文案生成 (Doctor's Comment) ---
+    # A. PCR 解读
+    pcr_desc = "情绪中性"
+    if pcr > 0:
+        if pcr < 0.6: 
+            pcr_desc = "散户狂热"
+            tags.append({"name": "🐂散户狂热", "color": "yellow"})
+        elif pcr > 1.0: 
+            pcr_desc = "极度悲观"
+            tags.append({"name": "🐻极度悲观", "color": "gray"})
+    
+    # B. RSI 解读
+    rsi_desc = "正常"
+    if rsi > 75: 
+        rsi_desc = "严重超买"
+        tags.append({"name": "🔥RSI过热", "color": "orange"})
+    elif rsi < 30: 
+        rsi_desc = "超卖区"
+        tags.append({"name": "💎RSI超卖", "color": "green"})
+
+    # C. 自动生成点评 (核心逻辑) ### CHANGED HERE ###
+    commentary = "👨‍⚕️ 医生点评: "
+    
+    # 趋势判断
+    if price > ma200: commentary += "长期趋势向上，"
+    else: commentary += "长期趋势走弱，"
+    
+    # 风险提示
+    risk_factors = []
+    if rsi > 75: risk_factors.append("RSI过热")
+    if pcr > 0 and pcr < 0.6: risk_factors.append("散户情绪过于狂热")
+    if abs(pain_deviation) > 0.2: risk_factors.append("价格严重偏离痛点")
+    
+    if risk_factors:
+        commentary += f"但 {'、'.join(risk_factors)}，谨防短期回调。"
+        if max_pain: commentary += f" 关注痛点 ${max_pain} 的牵引力。"
+    else:
+        if status == "L2-观察池": commentary += "量价配合健康，可沿动态止损持有。"
+        else: commentary += "目前处于震荡观察期。"
+
+    # --- 3. 标签与止损 ---
+    tags.insert(0, {"name": status})
     if alert: tags.append({"name": "🚨警报", "color": "red"})
     
-    if rsi > 75: tags.append({"name": "🔥RSI过热", "color": "orange"})
-    elif rsi < 30: tags.append({"name": "💎RSI超卖", "color": "green"})
-    
-    if pcr and pcr < 0.6: tags.append({"name": "🐂散户狂热", "color": "yellow"})
-
-    # ### CHANGED HERE: 动态止损 (吊灯止损法) ###
-    # 如果 ATR 有效，用 Price - 3*ATR，否则用 MA200
     stop_loss = round(price - 3 * atr, 2) if atr > 0 else round(ma200 * 0.95, 2)
 
     return {
         "price": price, "status": status, 
-        "stop": stop_loss, # 动态止损
+        "stop": stop_loss,
         "turnover": round(turnover*100, 2), 
         "vol": md.get('vol_ratio', 0),
         "source": source,
         "alert": alert, "alert_msg": alert_msg,
         "max_pain": max_pain,
-        "rsi": rsi, "pcr": pcr, "tags": tags # 传递新数据
+        "rsi": rsi, "rsi_desc": rsi_desc, # 传递描述
+        "pcr": pcr, "pcr_desc": pcr_desc, # 传递描述
+        "tags": tags,
+        "commentary": commentary # 传递点评
     }
 
 def sync_notion_data():
-    print("🚀 启动 Notion 同步 (深度指标版)...")
+    print("🚀 启动 Notion 同步 (医生点评版)...")
     
-    # 1. 扫描 (不变)
+    # 1. 扫描
     print("📋 [1/3] 扫描 Notion...")
     existing_pages = {}
     has_more = True
@@ -152,20 +185,33 @@ def sync_notion_data():
         properties = {
             "Name": {"title": [{"text": {"content": ticker}}]},
             "Status": {"select": {"name": data['status']}},
-            "Tags": {"multi_select": data['tags']} # 使用智能标签
+            "Tags": {"multi_select": data['tags']}
         }
         
-        # ### CHANGED HERE: 丰富的内容展示 ###
-        pain_text = f" | 🎯 痛点: ${data['max_pain']}" if data['max_pain'] else ""
-        pcr_text = f" | 🐂 PCR: {data['pcr']}" if data['pcr'] else ""
+        # ### CHANGED HERE: 重新排版，增加可读性 ###
+        # 第一行：价格 + 止损
+        line1 = f"💰 现价: ${data['price']} | 🛑 动态止损: ${data['stop']} (3ATR)"
+        
+        # 第二行：情绪指标 (RSI + PCR)
+        pcr_info = f"🐂 PCR: {data['pcr']} ({data['pcr_desc']})" if data['pcr'] else "PCR: --"
+        rsi_info = f"📊 RSI: {data['rsi']} ({data['rsi_desc']})"
+        line2 = f"{rsi_info} | {pcr_info}"
+        
+        # 第三行：痛点 + 换手
+        pain_info = f"🎯 痛点: ${data['max_pain']} (庄家目标)" if data['max_pain'] else "痛点: --"
+        vol_info = f"📈 换手: {data['turnover']}%"
+        line3 = f"{pain_info} | {vol_info}"
         
         children_blocks = [
             {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [
-                {"type": "text", "text": {"content": f"💰 现价: ${data['price']} | 🛑 动态止损: ${data['stop']}\n"}},
-                {"type": "text", "text": {"content": f"📊 RSI: {data['rsi']}{pcr_text}{pain_text}\n"}},
-                {"type": "text", "text": {"content": f"📈 换手: {data['turnover']}% | 量比: {data['vol']}x\n"}},
-                {"type": "text", "text": {"content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n"}, "annotations": {"color": "gray", "italic": True}},
-                {"type": "text", "text": {"content": f"{data['alert_msg']}" if data['alert'] else ""}, "annotations": {"color": "red"}}
+                {"type": "text", "text": {"content": line1 + "\n"}},
+                {"type": "text", "text": {"content": line2 + "\n"}},
+                {"type": "text", "text": {"content": line3 + "\n"}},
+                # 医生点评 (灰色斜体，突出显示)
+                {"type": "text", "text": {"content": "\n" + data['commentary'] + "\n", "annotations": {"color": "gray", "italic": True}}},
+                # 底部信息
+                {"type": "text", "text": {"content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n", "annotations": {"color": "gray"}}},
+                {"type": "text", "text": {"content": f"{data['alert_msg']}" if data['alert'] else "", "annotations": {"color": "red"}}}
             ]}}
         ]
 
@@ -181,7 +227,7 @@ def sync_notion_data():
             notion_api("POST", "/pages", new_page)
             print(f"   ✨ 新建: {ticker}")
 
-    # 3. 清理 (不变)
+    # 3. 清理
     print("🧹 [3/3] 清理废弃数据...")
     for ticker, page_id in existing_pages.items():
         if ticker not in processed_tickers:
