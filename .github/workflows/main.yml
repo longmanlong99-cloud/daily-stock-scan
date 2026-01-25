@@ -1,4 +1,4 @@
-name: stock daily-scan
+name: Daily-stock-scan
 
 on:
   workflow_dispatch:      # 允许手动运行
@@ -25,17 +25,11 @@ jobs:
         
       - name: 运行脚本
         env: 
-          # 👇 以前只有这两个
+          # 1. Notion 钥匙
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          # 👇 【必须加上这一行】代码才能拿到钥匙！
+          # 2. Polygon 钥匙 (查成交量)
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
-        
-        env: 
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
-          # 👇 新增这一行
+          # 3. Alpha Vantage 钥匙 (查流通股本 - 新增)
           ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
-
-          run: python main.py
+        run: python main.py
