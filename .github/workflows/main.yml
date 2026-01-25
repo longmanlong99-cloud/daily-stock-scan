@@ -3,7 +3,7 @@ name: Daily Stock Scan
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 20 * * 1-5'
+    - cron: '45 21 * * 1-5'
 
 permissions:
   contents: write
