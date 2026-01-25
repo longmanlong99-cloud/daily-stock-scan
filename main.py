@@ -76,16 +76,21 @@ def update_notion(ticker, data):
     """更新 Notion 数据 (含环境兼容保护)"""
     page_id = None
     
-    # 1. 尝试查询去重
+    # 1. 尝试查询去重 (如果库版本太低不支持查询，则自动跳过)
     try:
+        # 这是一个标准接口，如果报错说明库版本有问题
         response = notion.databases.query(
             database_id=database_id,
             filter={"property": "Name", "title": {"equals": ticker}}
         )
         if response and response.get("results"):
             page_id = response["results"][0]["id"]
+            
+    except AttributeError:
+        # 这是之前的报错点，我们把它“吃掉”，不让程序崩溃
+        print(f"⚠️ 环境 Notion 库版本过旧，跳过去重步骤，转为直接创建。")
     except Exception as e:
-        print(f"⚠️ 环境不支持查询去重，转为直接创建模式。")
+        print(f"⚠️ 查询 {ticker} 失败 ({e})，转为创建模式。")
 
     # 2. 准备数据
     tags = [{"name": data['status']}]
