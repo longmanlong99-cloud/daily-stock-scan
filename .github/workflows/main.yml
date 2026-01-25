@@ -18,12 +18,12 @@ jobs:
       with:
         python-version: '3.9'
 
-    # 👇👇👇 重点：完全照抄这一段，一个字母都别改 👇👇👇
+    # 👇👇👇 这里的安装列表里，彻底删掉了 notion-client 👇👇👇
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # 必须是 notion-client (官方库)，绝对不能是 notion
-        pip install requests yfinance notion-client
+        # 只装这两个，绝对不会冲突
+        pip install requests yfinance
 
     # 1. 抓数据
     - name: Run Data Updater
