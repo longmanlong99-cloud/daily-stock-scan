@@ -1,16 +1,15 @@
 name: 手动/自动更新基本面数据
 
 on:
-  workflow_dispatch: # 允许手动点击运行
+  workflow_dispatch:
   schedule:
     - cron: '0 0 1 * *' # 每月1号自动运行
 
 jobs:
   update-data:
     runs-on: ubuntu-latest
-    
     permissions:
-      contents: write  # 允许脚本把文件写回仓库
+      contents: write
 
     steps:
       - uses: actions/checkout@v2
@@ -22,17 +21,16 @@ jobs:
       - name: 安装依赖
         run: |
           pip install requests
-          pip install beautifulsoup4  # 👈 新增：安装网页解析神器
+          pip install firecrawl-py  # 👈 这里的关键变化
 
       - name: 运行搬运工
         env:
-          ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
         run: python update_floats.py
       
-      - name: 保存数据到仓库
+      - name: 保存数据
         run: |
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
           git add float_data.json
-          # 如果有变化就提交，没变化就不报错
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto update float data via Finviz" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto update via Firecrawl" && git push)
