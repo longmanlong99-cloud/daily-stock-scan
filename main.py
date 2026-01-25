@@ -6,129 +6,128 @@ from notion_client import Client
 from datetime import datetime
 
 # --- 配置区域 ---
-# 你想监控的股票列表
 WATCHLIST = ["RDW", "RCAT", "PLTR", "TSLA", "NVDA", "AMD", "AAPL"]
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
+DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
+notion = Client(auth=NOTION_TOKEN)
 
-# --- 1. 连接 Notion ---
-# 确保你在 GitHub Settings -> Secrets -> Actions 里配置了这两个变量
-notion = Client(auth=os.environ.get("NOTION_TOKEN"))
-database_id = os.environ.get("NOTION_DATABASE_ID")
-
-def calculate_max_pain(stock, current_price):
-    """计算期权最大痛点 (简化版)"""
-    try:
-        options_dates = stock.options
-        if not options_dates:
-            return None
-        
-        # 选最近的一个到期日
-        chain = stock.option_chain(options_dates[0])
-        calls = chain.calls
-        puts = chain.puts
-        
-        # 寻找 Open Interest (持仓量) 最大的价位作为参考
-        top_call_oi = calls.sort_values('openInterest', ascending=False).iloc[0]['strike']
-        top_put_oi = puts.sort_values('openInterest', ascending=False).iloc[0]['strike']
-        
-        return round((top_call_oi + top_put_oi) / 2, 2)
-    except Exception as e:
-        print(f"⚠️ {stock.ticker} 期权数据获取失败: {e}")
-        return None
-
-def get_stock_data(ticker):
-    """获取股票数据和技术指标"""
-    print(f"🔍 正在扫描: {ticker}...")
+def get_enhanced_data(ticker):
+    """获取股票数据、期权数据及高级指标"""
+    print(f"🔍 深度扫描: {ticker}...")
     stock = yf.Ticker(ticker)
-    
-    # 获取历史K线 (过去1年)
     hist = stock.history(period="1y")
-    if hist.empty:
-        return None
-    
+    if hist.empty: return None
+
+    # 基础指标
     current_price = hist['Close'].iloc[-1]
+    prev_close = hist['Close'].iloc[-2]
     volume = hist['Volume'].iloc[-1]
     avg_volume = hist['Volume'].tail(20).mean()
     
-    # 计算技术指标
+    # 风险指标：ATR (用于动态止损)
+    high_low = hist['High'] - hist['Low']
+    high_cp = abs(hist['High'] - hist['Close'].shift())
+    low_cp = abs(hist['Low'] - hist['Close'].shift())
+    tr = pd.concat([high_low, high_cp, low_cp], axis=1).max(axis=1)
+    atr = tr.rolling(14).mean().iloc[-1]
+    stop_loss = current_price - (2.5 * atr) # 建议止损位
+
+    # 漏斗逻辑逻辑指标
     ma200 = hist['Close'].tail(200).mean()
-    is_breakout = volume > (avg_volume * 2) # 量能翻倍
-    trend_status = "牛市" if current_price > ma200 else "熊市"
-    
-    # 计算最大痛点
-    max_pain = calculate_max_pain(stock, current_price)
-    
+    vol_ratio = volume / avg_volume
+    is_breakout = vol_ratio > 2.0 and current_price > prev_close # 放量上涨
+
+    # 获取期权痛点 (Max Pain)
+    max_pain = None
+    try:
+        if stock.options:
+            chain = stock.option_chain(stock.options[0])
+            calls, puts = chain.calls, chain.puts
+            # 简化计算：OI最大的行权价均值
+            top_call = calls.sort_values('openInterest', ascending=False).iloc[0]['strike']
+            top_put = puts.sort_values('openInterest', ascending=False).iloc[0]['strike']
+            max_pain = round((top_call + top_put) / 2, 2)
+    except: pass
+
     return {
         "price": round(current_price, 2),
-        "volume_ratio": round(volume / avg_volume, 1),
-        "trend": trend_status,
+        "vol_ratio": round(vol_ratio, 1),
+        "is_breakout": is_breakout,
         "max_pain": max_pain,
-        "breakout": is_breakout
+        "ma200": ma200,
+        "stop_loss": round(stop_loss, 2),
+        "history": hist['Close'].tail(10) # 用于后续相关性计算
     }
 
-def push_to_notion(ticker, data):
-    """将结果写入 Notion"""
-    # 1. 确定标签 (Multi-select 属性)
-    tags = []
-    if data['breakout']:
-        tags.append({"name": "L3-核心池"})
-    elif data['trend'] == "牛市":
-        tags.append({"name": "L2-观察池"})
-    else:
-        tags.append({"name": "L1-初选池"})
+def process_funnel(all_data):
+    """三级漏斗筛选逻辑 [cite: 7, 10]"""
+    results = []
+    # 1. 相关性去重：如果多只个股相关性 > 0.95，只留动量最强的 [cite: 30, 138]
+    # (此处为简化演示，实际可调用 df.corr())
+
+    for ticker, data in all_data.items():
+        # 2. 自动打标与分级 [cite: 34]
+        tags = []
+        status = "L1-初选池" # 默认级别 [cite: 12]
         
-    # 2. 计算风险警报文字
-    alert_text = ""
-    if data['max_pain']:
-        pain_diff = (data['price'] - data['max_pain']) / data['max_pain']
-        if abs(pain_diff) > 0.15: # 偏离痛点 15% 以上
-            alert_text = f"⚠️ 偏离痛点 {pain_diff:.1%}"
-            tags.append({"name": "风险警报"})
+        if data['price'] > data['ma200']:
+            tags.append({"name": "趋势/白马"})
+            status = "L2-观察池" # 站上200日线进入观察 [cite: 17]
+            
+        if data['is_breakout']:
+            tags.append({"name": "放量突破"})
+            status = "L3-核心池" # 放量突破进入核心 [cite: 27]
+            
+        if data['vol_ratio'] > 5.0:
+            tags.append({"name": "高波动/博弈"})
 
-    # 3. 动态构建正文内容 (关键修复点：解决空文字报错)
-    rich_text_content = [
-        {"text": {"content": f"💰 现价: ${data['price']}\n"}},
-        {"text": {"content": f"📊 量比: {data['volume_ratio']}x {'(放量突破)' if data['breakout'] else ''}\n"}},
-        {"text": {"content": f"🎯 Max Pain: ${data['max_pain'] if data['max_pain'] else '无数据'}\n"}}
-    ]
-    
-    # 只有当警报文字不为空时，才添加这段红色文字
-    if alert_text:
-        rich_text_content.append({
-            "text": {"content": alert_text},
-            "annotations": {"color": "red"}
+        # 3. 风险预警文字 [cite: 39]
+        alert = ""
+        if data['max_pain']:
+            diff = (data['price'] - data['max_pain']) / data['max_pain']
+            if abs(diff) > 0.15:
+                alert = f"⚠️ 偏离痛点 {diff:.1%}"
+                tags.append({"name": "风险警报"})
+
+        results.append({
+            "ticker": ticker,
+            "status": status,
+            "tags": tags,
+            "price": data['price'],
+            "stop": data['stop_loss'],
+            "alert": alert,
+            "pain": data['max_pain']
         })
+    return results
 
-    # 4. 执行推送
-    notion.pages.create(
-        parent={"database_id": database_id},
-        properties={
-            "Name": {"title": [{"text": {"content": ticker}}]},
-            "Tags": {"multi_select": tags}
-        },
-        children=[
-            {
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": {
-                    "rich_text": rich_text_content
-                }
-            }
+def sync_to_notion(results):
+    """同步到 Notion 看板 [cite: 58, 63]"""
+    for item in results:
+        # 构建正文内容
+        rich_text = [
+            {"text": {"content": f"💰 现价: ${item['price']} | 🛡️ 建议止损: ${item['stop']}\n"}},
+            {"text": {"content": f"🎯 Max Pain: ${item['pain'] if item['pain'] else '无'}\n"}}
         ]
-    )
-    print(f"✅ {ticker} 数据已成功推送至 Notion！")
+        if item['alert']:
+            rich_text.append({"text": {"content": item['alert']}, "annotations": {"color": "red"}})
 
-# --- 主程序 ---
+        notion.pages.create(
+            parent={"database_id": DATABASE_ID},
+            properties={
+                "Name": {"title": [{"text": {"content": item['ticker']}}]},
+                "Status": {"select": {"name": item['status']}}, # 需在Notion创建名为Status的Select列
+                "Tags": {"multi_select": item['tags']}
+            },
+            children=[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": rich_text}}]
+        )
+
 if __name__ == "__main__":
-    print("🚀 开始执行每日选股任务...")
-    success_count = 0
+    raw_data = {}
+    for t in WATCHLIST:
+        d = get_enhanced_data(t)
+        if d: raw_data[t] = d
     
-    for ticker in WATCHLIST:
-        try:
-            data = get_stock_data(ticker)
-            if data:
-                push_to_notion(ticker, data)
-                success_count += 1
-        except Exception as e:
-            print(f"❌ 处理 {ticker} 时出错: {e}")
-    
-    print(f"\n🏁 任务完成！成功推送 {success_count}/{len(WATCHLIST)} 个股票。")
+    processed_results = process_funnel(raw_data)
+    sync_to_notion(processed_results)
+    print("🏁 系统漏斗扫描并同步完成！")
+
