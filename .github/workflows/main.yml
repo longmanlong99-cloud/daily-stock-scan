@@ -1,0 +1,28 @@
+name: 每日自动选股
+
+on:
+  workflow_dispatch:      # 允许手动点击运行测试
+  schedule:
+    - cron: '30 23 * * 1-5' # 设定时间：周一到周五 UTC 23:30 (如果你在北美，这大概是盘后/晚饭时间)
+
+jobs:
+  run-stock-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 下载代码
+        uses: actions/checkout@v2
+        
+      - name: 安装 Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+          
+      - name: 安装依赖库
+        run: pip install -r requirements.txt
+        
+      - name: 运行脚本
+        env: # 这里就是把刚才那两个 Secrets 传给代码
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        run: python main.py
