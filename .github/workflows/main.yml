@@ -1,35 +1,43 @@
 name: Daily-stock-scan
 
 on:
-  workflow_dispatch:      # 允许手动运行
+  workflow_dispatch:  # 允许手动按钮运行
   schedule:
-    - cron: '30 23 * * 1-5' # 自动运行时间
+    - cron: '30 20 * * 1-5' # 相当于美东时间下午4:30自动运行
 
 jobs:
-  run-stock-scan:
+  run_scan:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: 下载代码 (Checkout)
-        uses: actions/checkout@v2
-        
-      - name: 安装 Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.9'
-          
-      - name: 强制安装依赖 (Fix Environment)
-        run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade notion-client yfinance pandas requests
-        
-      - name: 运行脚本
-        env: 
-          # 1. Notion 钥匙
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          # 2. Polygon 钥匙 (查成交量)
-          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
-          # 3. Alpha Vantage 钥匙 (查流通股本 - 新增)
-          ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
-        run: python main.py
+    # 1. 下载代码
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # 2. 安装 Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    # 3. 安装依赖 (这里只装必须的，去掉了多余的库)
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # ✅ 这里的 notion-client 是关键，千万别改回 notion
+        pip install requests yfinance notion-client
+
+    # 4. 🔥关键步骤：先运行搬运工，抓取最新流通股数据
+    # 这步会生成 float_data.json 供下一步使用
+    - name: Run Data Updater (Firecrawl)
+      env:
+        # 必须在这里注入 Key，否则脚本没权限抓取
+        FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      run: python update_floats.py
+
+    # 5. 最后步骤：运行主程序，推送到 Notion
+    - name: Run Main Logic
+      env:
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      run: python main.py
