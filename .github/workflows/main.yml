@@ -1,41 +1,37 @@
-name: Daily-stock-scan
+name: Daily Stock Scan
 
 on:
-  workflow_dispatch:  # 允许手动按钮运行
+  workflow_dispatch:  # 允许手动点击运行
   schedule:
-    - cron: '30 20 * * 1-5' # 相当于美东时间下午4:30自动运行
+    - cron: '30 20 * * 1-5' # 每天收盘后自动运行
 
 jobs:
   run_scan:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. 下载代码
     - name: Checkout code
       uses: actions/checkout@v3
 
-    # 2. 安装 Python
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
 
-    # 3. 安装依赖 (这里只装必须的，去掉了多余的库)
+    # 👇👇👇 这里的修改是决定生死的！ 👇👇👇
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # ✅ 这里的 notion-client 是关键，千万别改回 notion
+        # 必须是 notion-client，绝对不能写成 notion
         pip install requests yfinance notion-client
 
-    # 4. 🔥关键步骤：先运行搬运工，抓取最新流通股数据
-    # 这步会生成 float_data.json 供下一步使用
+    # 先运行搬运工 (抓取 RDW 数据)
     - name: Run Data Updater (Firecrawl)
       env:
-        # 必须在这里注入 Key，否则脚本没权限抓取
         FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
       run: python update_floats.py
 
-    # 5. 最后步骤：运行主程序，推送到 Notion
+    # 再运行主程序 (清理重复项 + 推送)
     - name: Run Main Logic
       env:
         NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
