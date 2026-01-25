@@ -1,15 +1,4 @@
 {
-    "AAPL": {
-        "price": 248.04,
-        "volume": 41625700,
-        "ma200": 234.73,
-        "vol_ratio": 0.7,
-        "rsi": 12.1,
-        "atr": 5.06,
-        "max_pain": 255.0,
-        "pcr": 0.58,
-        "last_updated": "2026-01-25 23:37:41"
-    },
     "CIFR": {
         "price": 17.57,
         "volume": 41599500,
@@ -19,62 +8,7 @@
         "atr": 1.86,
         "max_pain": 17.5,
         "pcr": 1.14,
-        "last_updated": "2026-01-25 23:37:44"
-    },
-    "RCAT": {
-        "price": 16.06,
-        "volume": 13711300,
-        "ma200": 8.88,
-        "vol_ratio": 0.7,
-        "rsi": 80.3,
-        "atr": 1.69,
-        "max_pain": 13.5,
-        "pcr": 0.61,
-        "last_updated": "2026-01-25 23:37:46"
-    },
-    "ZETA": {
-        "price": 21.75,
-        "volume": 8053100,
-        "ma200": 17.18,
-        "vol_ratio": 0.8,
-        "rsi": 57.7,
-        "atr": 1.36,
-        "max_pain": 21.0,
-        "pcr": 0.52,
-        "last_updated": "2026-01-25 23:37:48"
-    },
-    "TSLA": {
-        "price": 449.06,
-        "volume": 56636400,
-        "ma200": 372.76,
-        "vol_ratio": 0.9,
-        "rsi": 54.9,
-        "atr": 14.49,
-        "max_pain": 440.0,
-        "pcr": 0.84,
-        "last_updated": "2026-01-25 23:37:50"
-    },
-    "JOBY": {
-        "price": 13.93,
-        "volume": 14785000,
-        "ma200": 13.0,
-        "vol_ratio": 0.7,
-        "rsi": 46.6,
-        "atr": 1.13,
-        "max_pain": 15.0,
-        "pcr": 0.39,
-        "last_updated": "2026-01-25 23:37:53"
-    },
-    "BITF": {
-        "price": 2.74,
-        "volume": 36080300,
-        "ma200": 2.07,
-        "vol_ratio": 1.0,
-        "rsi": 54.2,
-        "atr": 0.24,
-        "max_pain": 3.0,
-        "pcr": 0.87,
-        "last_updated": "2026-01-25 23:37:55"
+        "last_updated": "2026-01-25 23:44:45"
     },
     "AMD": {
         "price": 259.68,
@@ -85,7 +19,7 @@
         "atr": 11.27,
         "max_pain": 232.5,
         "pcr": 1.69,
-        "last_updated": "2026-01-25 23:37:57"
+        "last_updated": "2026-01-25 23:44:47"
     },
     "NBIS": {
         "price": 94.5,
@@ -96,18 +30,7 @@
         "atr": 7.8,
         "max_pain": 100.0,
         "pcr": 1.0,
-        "last_updated": "2026-01-25 23:37:59"
-    },
-    "OSCR": {
-        "price": 15.68,
-        "volume": 5326400,
-        "ma200": 16.33,
-        "vol_ratio": 0.6,
-        "rsi": 55.0,
-        "atr": 1.07,
-        "max_pain": 16.0,
-        "pcr": 0.59,
-        "last_updated": "2026-01-25 23:38:01"
+        "last_updated": "2026-01-25 23:44:49"
     },
     "ACHR": {
         "price": 8.61,
@@ -118,7 +41,7 @@
         "atr": 0.6,
         "max_pain": 8.5,
         "pcr": 0.28,
-        "last_updated": "2026-01-25 23:38:04"
+        "last_updated": "2026-01-25 23:44:51"
     },
     "NVDA": {
         "price": 187.67,
@@ -129,7 +52,7 @@
         "atr": 5.32,
         "max_pain": 185.0,
         "pcr": 0.91,
-        "last_updated": "2026-01-25 23:38:06"
+        "last_updated": "2026-01-25 23:44:54"
     },
     "RDW": {
         "price": 12.52,
@@ -140,7 +63,51 @@
         "atr": 1.4,
         "max_pain": 10.0,
         "pcr": 0.35,
-        "last_updated": "2026-01-25 23:38:08"
+        "last_updated": "2026-01-25 23:44:56"
+    },
+    "OSCR": {
+        "price": 15.68,
+        "volume": 5326400,
+        "ma200": 16.33,
+        "vol_ratio": 0.6,
+        "rsi": 55.0,
+        "atr": 1.07,
+        "max_pain": 16.0,
+        "pcr": 0.59,
+        "last_updated": "2026-01-25 23:44:59"
+    },
+    "BITF": {
+        "price": 2.74,
+        "volume": 36080300,
+        "ma200": 2.07,
+        "vol_ratio": 1.0,
+        "rsi": 54.2,
+        "atr": 0.24,
+        "max_pain": 3.0,
+        "pcr": 0.87,
+        "last_updated": "2026-01-25 23:45:01"
+    },
+    "RCAT": {
+        "price": 16.06,
+        "volume": 13711300,
+        "ma200": 8.88,
+        "vol_ratio": 0.7,
+        "rsi": 80.3,
+        "atr": 1.69,
+        "max_pain": 13.5,
+        "pcr": 0.61,
+        "last_updated": "2026-01-25 23:45:03"
+    },
+    "ZETA": {
+        "price": 21.75,
+        "volume": 8053100,
+        "ma200": 17.18,
+        "vol_ratio": 0.8,
+        "rsi": 57.7,
+        "atr": 1.36,
+        "max_pain": 21.0,
+        "pcr": 0.52,
+        "last_updated": "2026-01-25 23:45:05"
     },
     "PLTR": {
         "price": 169.6,
@@ -151,6 +118,39 @@
         "atr": 7.04,
         "max_pain": 170.0,
         "pcr": 0.72,
-        "last_updated": "2026-01-25 23:38:10"
+        "last_updated": "2026-01-25 23:45:07"
+    },
+    "AAPL": {
+        "price": 248.04,
+        "volume": 41625700,
+        "ma200": 234.73,
+        "vol_ratio": 0.7,
+        "rsi": 12.1,
+        "atr": 5.06,
+        "max_pain": 255.0,
+        "pcr": 0.58,
+        "last_updated": "2026-01-25 23:45:10"
+    },
+    "TSLA": {
+        "price": 449.06,
+        "volume": 56636400,
+        "ma200": 372.76,
+        "vol_ratio": 0.9,
+        "rsi": 54.9,
+        "atr": 14.49,
+        "max_pain": 440.0,
+        "pcr": 0.84,
+        "last_updated": "2026-01-25 23:45:12"
+    },
+    "JOBY": {
+        "price": 13.93,
+        "volume": 14785000,
+        "ma200": 13.0,
+        "vol_ratio": 0.7,
+        "rsi": 46.6,
+        "atr": 1.13,
+        "max_pain": 15.0,
+        "pcr": 0.39,
+        "last_updated": "2026-01-25 23:45:14"
     }
 }
