@@ -1,175 +1,185 @@
 import os
+import time
+import requests
 import yfinance as yf
-import pandas as pd
 from notion_client import Client
 
-# --- 核心配置 ---
-# 1. Notion 客户端初始化
-notion = Client(auth=os.environ.get("NOTION_TOKEN"))
-database_id = os.environ.get("NOTION_DATABASE_ID")
+# --- 配置区 ---
+POLYGON_KEY = os.environ.get("POLYGON_API_KEY")
+NOTION = Client(auth=os.environ.get("NOTION_TOKEN"))
+DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
 
-# 2. 读取外部股票清单函数
+# 读取清单
 def load_watchlist():
-    """
-    优先读取 stocks.txt 文件。
-    如果文件不存在，使用默认列表。
-    """
-    default_list = ["AAPL", "NVDA", "TSLA"] # 兜底列表
-    file_path = "stocks.txt"
-    
-    try:
-        if os.path.exists(file_path):
-            with open(file_path, "r") as f:
-                # 读取每一行，去除空格和换行符，并过滤空行
-                lines = [line.strip().upper() for line in f if line.strip()]
-            if lines:
-                print(f"📂 成功加载外部清单 ({len(lines)} 只): {lines}")
-                return lines
-    except Exception as e:
-        print(f"⚠️ 读取 stocks.txt 出错: {e}")
-    
-    print("⚠️ 未找到有效 stocks.txt，使用内置默认列表。")
-    return default_list
+    default = ["RDW", "RCAT", "PLTR", "TSLA", "NVDA", "AMD", "AAPL"]
+    if os.path.exists("stocks.txt"):
+        with open("stocks.txt", "r") as f:
+            lines = [l.strip().upper() for l in f if l.strip()]
+            if lines: return lines
+    return default
 
-# 获取监控名单
 WATCHLIST = load_watchlist()
 
-def get_stock_logic(ticker):
-    print(f"🔍 深度扫描: {ticker}...")
+def get_polygon_data(ticker):
+    """
+    使用 Polygon API 获取最精准的股本数据
+    """
     try:
-        stock = yf.Ticker(ticker)
-        # 强制刷新数据
-        hist = stock.history(period="5d") 
-        if hist.empty: 
-            print(f"⚠️ {ticker} 无法获取K线数据")
-            return None
-
-        # 获取基础数据
-        price = round(hist['Close'].iloc[-1], 2)
-        open_p = hist['Open'].iloc[-1]
-        low_p = hist['Low'].iloc[-1]
-        high_p = hist['High'].iloc[-1]
-        volume = hist['Volume'].iloc[-1]
+        # 1. 获取详情（拿精准股本）
+        url_details = f"https://api.polygon.io/v3/reference/tickers/{ticker}?apiKey={POLYGON_KEY}"
+        r = requests.get(url_details)
+        if r.status_code != 200: return None
+        data = r.json().get("results", {})
         
-        # --- 精确度升级：优先使用流通股本计算换手率 ---
-        # 很多软件用流通股算换手，yfinance 默认用总股本，导致数值偏小。
-        # 这里强制尝试获取 floatShares (流通股)。
-        try:
-            shares = stock.info.get('floatShares') or stock.info.get('sharesOutstanding')
-            turnover_rate = (volume / shares) if shares else 0
-        except:
-            turnover_rate = 0
+        # 获取加权流通股本 (这是最准的分母)
+        shares = data.get("weighted_shares_outstanding") or data.get("share_class_shares_outstanding")
         
-        # 计算量比
-        avg_vol = hist['Volume'].mean()
-        vol_ratio = round(volume / avg_vol, 1) if avg_vol > 0 else 0
-        ma_close = hist['Close'].mean()
-        
-        # --- 风险判定逻辑 (阈值 20%) ---
-        price_pos = (price - low_p) / (high_p - low_p) if (high_p - low_p) != 0 else 0.5
-        is_red_alert = False
-        alert_msg = ""
-        
-        # 规则 A：换手率 > 20% 且收盘价接近最低点 (出货嫌疑)
-        if turnover_rate > 0.20 and price_pos < 0.3:
-            is_red_alert = True
-            alert_msg = f"🚨 警报：高换手出货 (换手 {turnover_rate:.1%})"
+        # 2. 获取今日行情（拿精准成交量）
+        # 这里的 prev 接口获取的是“前一个交易日”，对于盘后运行正合适
+        url_price = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev?adjusted=true&apiKey={POLYGON_KEY}"
+        r2 = requests.get(url_price)
+        price_data = {}
+        if r2.status_code == 200 and r2.json().get("resultsCount", 0) > 0:
+            res = r2.json()["results"][0]
+            price_data = {
+                "close": res.get("c"),
+                "volume": res.get("v"),
+                "high": res.get("h"),
+                "low": res.get("l")
+            }
             
-        # 规则 B：换手率 > 30% (极端活跃)
-        elif turnover_rate > 0.30:
-            is_red_alert = True
-            alert_msg = f"🚨 警报：超高换手 ({turnover_rate:.1%})"
-
-        # --- 漏斗分级 ---
-        status = "L1-初选池"
-        if price > ma_close: status = "L2-观察池"
-        if vol_ratio > 2.0 and price > open_p: status = "L3-核心池"
-        
-        # 风险强制降级
-        if is_red_alert: status = "L1-初选池"
-
-        # ATR 止损估算
-        atr = (hist['High'] - hist['Low']).mean()
-        stop_loss = round(price - (2.5 * atr), 2)
-
-        return {
-            "price": price, 
-            "status": status, 
-            "stop": stop_loss, 
-            "vol": vol_ratio, 
-            "turnover": round(turnover_rate * 100, 2),
-            "alert": is_red_alert,
-            "alert_msg": alert_msg
-        }
+        return {"shares": shares, "market_data": price_data}
     except Exception as e:
-        print(f"❌ {ticker} 计算出错: {e}")
+        print(f"⚠️ Polygon 请求失败: {e}")
         return None
 
-def update_notion(ticker, data):
-    """更新 Notion 数据 (自动判断是更新旧卡片还是新建)"""
-    page_id = None
+def analyze_stock(ticker):
+    print(f"🔍 分析: {ticker} (Polygon + Yahoo)...")
     
-    # 1. 关键步骤：查询去重
-    # 这一步是为了防止列表无限变长。它会先找有没有这个名字的卡片。
+    # --- A. Polygon: 负责精准数据 (换手率核心) ---
+    poly = get_polygon_data(ticker)
+    
+    # 免费版限制 5次/分，所以必须睡 15秒 防止报错
+    print("   ...等待 15秒 (Polygon 免费版限制)...")
+    time.sleep(15) 
+    
+    if not poly or not poly.get("shares"):
+        print(f"⚠️ 无法从 Polygon 获取 {ticker} 股本数据，跳过")
+        return None
+
+    shares = poly["shares"]
+    m_data = poly["market_data"]
+    
+    if not m_data:
+        print(f"⚠️ 无法从 Polygon 获取 {ticker} 行情，跳过")
+        return None
+
+    # 使用 Polygon 的数据计算核心指标
+    price = m_data["close"]
+    volume = m_data["volume"]
+    turnover_rate = volume / shares # 精准换手率
+    
+    # --- B. Yahoo: 负责历史趋势 (MA200, ATR) ---
+    # 因为 Polygon 免费版拉历史数据很麻烦，这部分 Yahoo 依然做得很好
     try:
-        response = notion.databases.query(
-            database_id=database_id,
+        yf_stock = yf.Ticker(ticker)
+        hist = yf_stock.history(period="1y") # 拉长一点确保有 MA200
+        if hist.empty: return None
+        
+        ma200 = hist['Close'].tail(200).mean()
+        # 量比 (用 Polygon的今日量 / Yahoo的历史均量)
+        avg_vol = hist['Volume'].tail(20).mean()
+        vol_ratio = round(volume / avg_vol, 1) if avg_vol > 0 else 0
+        
+        # ATR 止损
+        atr = (hist['High'] - hist['Low']).tail(14).mean()
+        stop_loss = round(price - (2.5 * atr), 2)
+    except:
+        # 如果 Yahoo 挂了，给默认值
+        ma200 = price * 0.9 
+        vol_ratio = 1.0
+        stop_loss = price * 0.9
+
+    # --- C. 逻辑判定 ---
+    price_pos = (price - m_data["low"]) / (m_data["high"] - m_data["low"]) if (m_data["high"] != m_data["low"]) else 0.5
+    
+    is_red_alert = False
+    alert_msg = ""
+
+    # 规则：换手率 > 20% 且 收盘位置低
+    if turnover_rate > 0.20 and price_pos < 0.3:
+        is_red_alert = True
+        alert_msg = f"🚨 警报：高换手出货 (换手 {turnover_rate:.1%})"
+    elif turnover_rate > 0.30:
+        is_red_alert = True
+        alert_msg = f"🚨 警报：超高换手 ({turnover_rate:.1%})"
+
+    status = "L1-初选池"
+    if price > ma200: status = "L2-观察池"
+    if vol_ratio > 2.0 and price > price * 0.99: status = "L3-核心池" # 简化判定
+    if is_red_alert: status = "L1-初选池"
+
+    return {
+        "price": price,
+        "status": status,
+        "stop": stop_loss,
+        "vol": vol_ratio,
+        "turnover": round(turnover_rate * 100, 2),
+        "alert": is_red_alert,
+        "alert_msg": alert_msg
+    }
+
+def update_notion(ticker, data):
+    # 1. 查找去重
+    page_id = None
+    try:
+        # 尝试查询
+        resp = NOTION.databases.query(
+            database_id=DATABASE_ID,
             filter={"property": "Name", "title": {"equals": ticker}}
         )
-        if response and response.get("results"):
-            # 找到了！记录下 ID，下面直接修改它，而不是新建
-            page_id = response["results"][0]["id"]
-            print(f"   ↳ 发现旧卡片，准备更新...")
-    except Exception as e:
-        print(f"⚠️ 查询去重失败 ({e})，将转为新建模式。")
+        if resp.get("results"):
+            page_id = resp["results"][0]["id"]
+    except:
+        pass # 查不到就新建
 
-    # 2. 准备数据
+    # 2. 准备内容
     tags = [{"name": data['status']}]
     if data['alert']: tags.append({"name": "🚨极端换手", "color": "red"})
     if 0.10 < data['turnover'] <= 20: tags.append({"name": "活跃/博弈", "color": "orange"})
-    
-    properties = {
+
+    props = {
         "Name": {"title": [{"text": {"content": ticker}}]},
-        "Status": {"select": {"name": data['status']}}, 
+        "Status": {"select": {"name": data['status']}},
         "Tags": {"multi_select": tags}
     }
     
-    content_block = {
-        "object": "block", 
-        "type": "paragraph", 
-        "paragraph": {
-            "rich_text": [
-                {"text": {"content": f"💰 现价: ${data['price']} | 🛡️ 止损: ${data['stop']}\n"}},
-                {"text": {"content": f"📊 换手: {data['turnover']}% | 量比: {data['vol']}x\n"}},
-                {"text": {"content": f"{data['alert_msg']}" if data['alert'] else ""}, "annotations": {"color": "red"}}
-            ]
-        }
-    }
+    # 正文块
+    content = [
+        {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [
+            {"text": {"content": f"💰 现价(Poly): ${data['price']} | 🛡️ 止损: ${data['stop']}\n"}},
+            {"text": {"content": f"📊 精准换手: {data['turnover']}% | 量比: {data['vol']}x\n"}},
+            {"text": {"content": f"{data['alert_msg']}" if data['alert'] else ""}, "annotations": {"color": "red"}}
+        ]}}
+    ]
 
-    # 3. 执行 (更新 或 新建)
     try:
         if page_id:
-            # 更新模式：只修改属性，保持卡片只有一个
-            notion.pages.update(page_id=page_id, properties=properties)
-            print(f"🔄 {ticker} 数据已更新 (旧卡片覆盖)")
+            NOTION.pages.update(page_id=page_id, properties=props)
+            print(f"✅ {ticker} 更新成功")
         else:
-            # 新建模式：Notion里没有，创建一个新的
-            notion.pages.create(
-                parent={"database_id": database_id}, 
-                properties=properties, 
-                children=[content_block]
-            )
-            print(f"✨ {ticker} 新卡片创建成功")
+            NOTION.pages.create(parent={"database_id": DATABASE_ID}, properties=props, children=content)
+            print(f"✨ {ticker} 新建成功")
     except Exception as e:
-        print(f"❌ {ticker} 推送失败: {e}")
+        print(f"❌ Notion 推送失败: {e}")
 
 if __name__ == "__main__":
-    print("🚀 开始运行...")
-    if not WATCHLIST:
-        print("❌ 监控名单为空，请检查 stocks.txt")
+    print("🚀 启动 Polygon 增强版扫描...")
+    if not POLYGON_KEY:
+        print("❌ 错误：未找到 POLYGON_API_KEY，请在 GitHub Secrets 中配置！")
     else:
         for t in WATCHLIST:
-            res = get_stock_logic(t)
-            if res:
-                update_notion(t, res)
-    print("🏁 完成！")
+            data = analyze_stock(t)
+            if data:
+                update_notion(t, data)
+    print("🏁 完成")
