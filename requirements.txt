@@ -1,6 +1,7 @@
-pip install --upgrade notion-client
+notion-client
 requests
 pandas
 yfinance
 numpy
+
 
