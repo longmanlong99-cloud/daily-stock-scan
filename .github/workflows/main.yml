@@ -31,3 +31,9 @@ jobs:
           # 👇 【必须加上这一行】代码才能拿到钥匙！
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
         run: python main.py
+        env: 
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          # 👇 新增这一行
+          ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
