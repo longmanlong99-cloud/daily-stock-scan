@@ -1,16 +1,16 @@
 name: stock daily-scan
 
 on:
-  workflow_dispatch:      # 允许手动点击运行测试
+  workflow_dispatch:      # 允许手动运行
   schedule:
-    - cron: '30 23 * * 1-5' # 设定时间：周一到周五 UTC 23:30 (北美盘后)
+    - cron: '30 23 * * 1-5' # 自动运行时间
 
 jobs:
   run-stock-scan:
     runs-on: ubuntu-latest
     
     steps:
-      - name: 下载代码
+      - name: 下载代码 (Checkout)
         uses: actions/checkout@v2
         
       - name: 安装 Python
@@ -18,11 +18,11 @@ jobs:
         with:
           python-version: '3.9'
           
-      - name: 安装依赖库 (关键修复)
+      - name: 强制安装依赖 (Fix Environment)
         run: |
-          pip install -r requirements.txt
-          pip install --upgrade notion-client yfinance pandas
-          # ↑ 上面这行是救命稻草：强制将 notion-client 升级到官方最新版
+          python -m pip install --upgrade pip
+          pip install --upgrade notion-client yfinance pandas requests
+          # ↑ 这一行是关键！强制服务器下载最新版，不管缓存里有什么旧垃圾
         
       - name: 运行脚本
         env: 
