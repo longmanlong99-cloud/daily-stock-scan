@@ -37,22 +37,27 @@ def get_stock_logic(ticker):
         vol_ratio = round(volume / avg_vol, 1) if avg_vol > 0 else 0
         ma_close = hist['Close'].mean()
         
-        # --- 风险判定逻辑 ---
+        # --- 风险判定逻辑 (已修改为 20%) ---
         price_pos = (price - low_p) / (high_p - low_p) if (high_p - low_p) != 0 else 0.5
         is_red_alert = False
         alert_msg = ""
         
-        if turnover_rate > 0.5 and price_pos < 0.3:
+        # 规则 A：换手率 > 20% 且收盘价接近最低点 (出货嫌疑)
+        if turnover_rate > 0.20 and price_pos < 0.3:
             is_red_alert = True
-            alert_msg = f"🚨 警报：天量出货 (换手 {turnover_rate:.1%})"
-        elif turnover_rate > 0.6:
+            alert_msg = f"🚨 警报：高换手出货 (换手 {turnover_rate:.1%})"
+            
+        # 规则 B：换手率 > 30% (极端活跃，无论涨跌都报警)
+        elif turnover_rate > 0.30:
             is_red_alert = True
-            alert_msg = f"🚨 警报：极端换手 ({turnover_rate:.1%})"
+            alert_msg = f"🚨 警报：超高换手 ({turnover_rate:.1%})"
 
         # --- 漏斗分级 ---
         status = "L1-初选池"
         if price > ma_close: status = "L2-观察池"
         if vol_ratio > 2.0 and price > open_p: status = "L3-核心池"
+        
+        # 风险强制降级
         if is_red_alert: status = "L1-初选池"
 
         # ATR 估算
@@ -76,18 +81,15 @@ def update_notion(ticker, data):
     """更新 Notion 数据 (含环境兼容保护)"""
     page_id = None
     
-    # 1. 尝试查询去重 (如果库版本太低不支持查询，则自动跳过)
+    # 1. 尝试查询去重
     try:
-        # 这是一个标准接口，如果报错说明库版本有问题
         response = notion.databases.query(
             database_id=database_id,
             filter={"property": "Name", "title": {"equals": ticker}}
         )
         if response and response.get("results"):
             page_id = response["results"][0]["id"]
-            
     except AttributeError:
-        # 这是之前的报错点，我们把它“吃掉”，不让程序崩溃
         print(f"⚠️ 环境 Notion 库版本过旧，跳过去重步骤，转为直接创建。")
     except Exception as e:
         print(f"⚠️ 查询 {ticker} 失败 ({e})，转为创建模式。")
@@ -95,6 +97,8 @@ def update_notion(ticker, data):
     # 2. 准备数据
     tags = [{"name": data['status']}]
     if data['alert']: tags.append({"name": "🚨极端换手", "color": "red"})
+    # 如果换手率 > 10% 就打个橙色标签提示活跃
+    if 0.10 < data['turnover'] <= 20: tags.append({"name": "活跃/博弈", "color": "orange"})
     
     properties = {
         "Name": {"title": [{"text": {"content": ticker}}]},
