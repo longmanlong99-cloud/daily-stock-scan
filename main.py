@@ -52,8 +52,9 @@ def get_stock_logic(ticker):
         volume = hist['Volume'].iloc[-1]
         
         # --- 精确度升级：优先使用流通股本计算换手率 ---
+        # 很多软件用流通股算换手，yfinance 默认用总股本，导致数值偏小。
+        # 这里强制尝试获取 floatShares (流通股)。
         try:
-            # 优先取 floatShares (流通股)，如果没有则取 sharesOutstanding (总股本)
             shares = stock.info.get('floatShares') or stock.info.get('sharesOutstanding')
             turnover_rate = (volume / shares) if shares else 0
         except:
@@ -105,21 +106,22 @@ def get_stock_logic(ticker):
         return None
 
 def update_notion(ticker, data):
-    """更新 Notion 数据 (含环境兼容保护)"""
+    """更新 Notion 数据 (自动判断是更新旧卡片还是新建)"""
     page_id = None
     
-    # 1. 尝试查询去重
+    # 1. 关键步骤：查询去重
+    # 这一步是为了防止列表无限变长。它会先找有没有这个名字的卡片。
     try:
         response = notion.databases.query(
             database_id=database_id,
             filter={"property": "Name", "title": {"equals": ticker}}
         )
         if response and response.get("results"):
+            # 找到了！记录下 ID，下面直接修改它，而不是新建
             page_id = response["results"][0]["id"]
-    except AttributeError:
-        print(f"⚠️ 环境 Notion 库版本过旧，跳过去重步骤，转为直接创建。")
+            print(f"   ↳ 发现旧卡片，准备更新...")
     except Exception as e:
-        print(f"⚠️ 查询 {ticker} 失败 ({e})，转为创建模式。")
+        print(f"⚠️ 查询去重失败 ({e})，将转为新建模式。")
 
     # 2. 准备数据
     tags = [{"name": data['status']}]
@@ -144,18 +146,20 @@ def update_notion(ticker, data):
         }
     }
 
-    # 3. 执行更新
+    # 3. 执行 (更新 或 新建)
     try:
         if page_id:
+            # 更新模式：只修改属性，保持卡片只有一个
             notion.pages.update(page_id=page_id, properties=properties)
-            print(f"🔄 {ticker} 更新成功")
+            print(f"🔄 {ticker} 数据已更新 (旧卡片覆盖)")
         else:
+            # 新建模式：Notion里没有，创建一个新的
             notion.pages.create(
                 parent={"database_id": database_id}, 
                 properties=properties, 
                 children=[content_block]
             )
-            print(f"✨ {ticker} 创建成功")
+            print(f"✨ {ticker} 新卡片创建成功")
     except Exception as e:
         print(f"❌ {ticker} 推送失败: {e}")
 
