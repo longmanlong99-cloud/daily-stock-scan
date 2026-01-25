@@ -25,9 +25,10 @@ def get_stock_logic(ticker):
         high_p = hist['High'].iloc[-1]
         volume = hist['Volume'].iloc[-1]
         
-        # 尝试获取总股本计算换手率
+        # --- 核心修改：优先使用流通股本计算换手率 ---
         try:
-            shares = stock.info.get('sharesOutstanding')
+            # floatShares = 流通股 (分母更小，换手率更高，更真实)
+            shares = stock.info.get('floatShares') or stock.info.get('sharesOutstanding')
             turnover_rate = (volume / shares) if shares else 0
         except:
             turnover_rate = 0
@@ -37,7 +38,7 @@ def get_stock_logic(ticker):
         vol_ratio = round(volume / avg_vol, 1) if avg_vol > 0 else 0
         ma_close = hist['Close'].mean()
         
-        # --- 风险判定逻辑 (已修改为 20%) ---
+        # --- 风险判定逻辑 (阈值 20%) ---
         price_pos = (price - low_p) / (high_p - low_p) if (high_p - low_p) != 0 else 0.5
         is_red_alert = False
         alert_msg = ""
