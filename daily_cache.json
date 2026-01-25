@@ -1,0 +1,114 @@
+{
+    "TSLA": {
+        "price": 449.06,
+        "volume": 56636400,
+        "ma200": 372.76,
+        "vol_ratio": 0.9,
+        "max_pain": 440.0,
+        "last_updated": "2026-01-25 23:02:24"
+    },
+    "OSCR": {
+        "price": 15.68,
+        "volume": 5326400,
+        "ma200": 16.33,
+        "vol_ratio": 0.6,
+        "max_pain": 16.0,
+        "last_updated": "2026-01-25 23:02:26"
+    },
+    "NVDA": {
+        "price": 187.67,
+        "volume": 142524700,
+        "ma200": 165.69,
+        "vol_ratio": 0.8,
+        "max_pain": 185.0,
+        "last_updated": "2026-01-25 23:02:28"
+    },
+    "PLTR": {
+        "price": 169.6,
+        "volume": 30210700,
+        "ma200": 157.17,
+        "vol_ratio": 0.7,
+        "max_pain": 170.0,
+        "last_updated": "2026-01-25 23:02:31"
+    },
+    "ACHR": {
+        "price": 8.61,
+        "volume": 32641300,
+        "ma200": 9.56,
+        "vol_ratio": 0.7,
+        "max_pain": 8.5,
+        "last_updated": "2026-01-25 23:02:33"
+    },
+    "JOBY": {
+        "price": 13.93,
+        "volume": 14785000,
+        "ma200": 13.0,
+        "vol_ratio": 0.7,
+        "max_pain": 15.0,
+        "last_updated": "2026-01-25 23:02:35"
+    },
+    "CIFR": {
+        "price": 17.57,
+        "volume": 41599500,
+        "ma200": 10.32,
+        "vol_ratio": 1.1,
+        "max_pain": 17.5,
+        "last_updated": "2026-01-25 23:02:37"
+    },
+    "ZETA": {
+        "price": 21.75,
+        "volume": 8053100,
+        "ma200": 17.18,
+        "vol_ratio": 0.8,
+        "max_pain": 21.0,
+        "last_updated": "2026-01-25 23:02:40"
+    },
+    "RDW": {
+        "price": 12.52,
+        "volume": 50288400,
+        "ma200": 10.72,
+        "vol_ratio": 1.3,
+        "max_pain": 10.0,
+        "last_updated": "2026-01-25 23:02:42"
+    },
+    "AAPL": {
+        "price": 248.04,
+        "volume": 41625700,
+        "ma200": 234.73,
+        "vol_ratio": 0.7,
+        "max_pain": 255.0,
+        "last_updated": "2026-01-25 23:02:44"
+    },
+    "NBIS": {
+        "price": 94.5,
+        "volume": 10018900,
+        "ma200": 72.96,
+        "vol_ratio": 0.7,
+        "max_pain": 100.0,
+        "last_updated": "2026-01-25 23:02:47"
+    },
+    "RCAT": {
+        "price": 16.06,
+        "volume": 13711300,
+        "ma200": 8.88,
+        "vol_ratio": 0.7,
+        "max_pain": 13.5,
+        "last_updated": "2026-01-25 23:02:49"
+    },
+    "BITF": {
+        "price": 2.74,
+        "volume": 36080300,
+        "ma200": 2.07,
+        "vol_ratio": 1.0,
+        "max_pain": 3.0,
+        "last_updated": "2026-01-25 23:02:51"
+    },
+    "AMD": {
+        "price": 259.68,
+        "volume": 47426900,
+        "ma200": 171.84,
+        "vol_ratio": 1.0,
+        "max_pain": 232.5,
+        "last_updated": "2026-01-25 23:02:53"
+    }
+}
