@@ -90,7 +90,7 @@ def get_stock_data(ticker):
             alert_msg = f"⚡ 偏离痛点 {deviation:.0%} (Pain:${max_pain})"
             
     # 极端换手报警
-    if turnover > 0.5:
+    if turnover > 0.2:
         alert = True
         alert_msg = f"🚨 极端换手 {turnover:.1%}"
 
@@ -194,3 +194,4 @@ def sync_notion_data():
 
 if __name__ == "__main__":
     sync_notion_data()
+
