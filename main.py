@@ -14,19 +14,19 @@ if os.path.exists("stocks.txt"):
 notion = Client(auth=os.environ.get("NOTION_TOKEN"))
 database_id = os.environ.get("NOTION_DATABASE_ID")
 
-# --- 2. 加载本地精准数据 ---
+# --- 2. 加载本地数据库 ---
 FLOAT_DB = {}
 if os.path.exists("float_data.json"):
     try:
         with open("float_data.json", "r") as f:
             FLOAT_DB = json.load(f)
-        print(f"📘 已加载本地精准数据库: {len(FLOAT_DB)} 条记录")
+        print(f"📘 已加载本地数据库: {len(FLOAT_DB)} 条记录")
     except Exception as e:
         print(f"⚠️ 读取 float_data.json 失败: {e}")
 
 # --- 3. 辅助功能：清理 Notion 重复项 ---
 def clean_and_map_database():
-    print("🧹 [系统] 正在扫描数据库，建立索引...")
+    print("🧹 [系统] 正在扫描数据库索引...")
     ticker_map = {} 
     try:
         all_pages = []
@@ -41,7 +41,6 @@ def clean_and_map_database():
             except:
                 has_more = False
         
-        # 建立映射并去重
         seen = {}
         duplicates = []
         for page in all_pages:
@@ -56,11 +55,10 @@ def clean_and_map_database():
                     seen[ticker] = page["id"]
                     ticker_map[ticker] = page["id"]
         
-        # 删除重复
         for dup_id in duplicates:
             try: notion.pages.update(page_id=dup_id, archived=True)
             except: pass
-        if duplicates: print(f"   🗑️ 已自动清理 {len(duplicates)} 个重复条目")
+        if duplicates: print(f"   🗑️ 已清理 {len(duplicates)} 个重复条目")
             
     except Exception as e:
         print(f"⚠️ 吸尘器跳过: {e}")
@@ -68,16 +66,13 @@ def clean_and_map_database():
 
 PAGE_MAP = clean_and_map_database()
 
-# --- 4. 辅助功能：清空页面旧内容 (解决数据堆积) ---
+# --- 4. 辅助功能：清空页面旧内容 ---
 def clear_page_content(page_id):
     try:
-        # 获取页面下的所有块
         blocks = notion.blocks.children.list(block_id=page_id)
         for block in blocks.get("results", []):
-            # 逐个删除
             notion.blocks.delete(block_id=block["id"])
-    except:
-        pass # 如果删失败就算了，不影响主流程
+    except: pass
 
 def get_stock_logic(ticker):
     print(f"🔍 深度扫描: {ticker}...")
@@ -88,67 +83,48 @@ def get_stock_logic(ticker):
             print(f"   ⚠️ {ticker} 无交易数据")
             return None
 
-        # 基础数据
         price = round(hist['Close'].iloc[-1], 2)
         open_p = hist['Open'].iloc[-1]
-        low_p = hist['Low'].iloc[-1]
-        high_p = hist['High'].iloc[-1]
         volume = hist['Volume'].iloc[-1]
-        ma_close = hist['Close'].mean() # 5日均线
+        ma_close = hist['Close'].mean()
 
         # --- 核心：数据源判定 ---
         share_float = 0
         data_source = "❓未知"
         
-        # 1. 优先：本地库 (Firecrawl)
+        # 1. 优先：本地库
         if ticker in FLOAT_DB:
             share_float = FLOAT_DB[ticker]
-            data_source = "🔥本地库" # 标记来源
+            data_source = "🔥本地库"
             
         # 2. 备用：Yahoo
         if not share_float:
             share_float = stock.info.get('floatShares')
-            data_source = "⚠️Yahoo" # 标记来源
+            data_source = "⚠️YahooAPI"
             
         # 3. 兜底
         if not share_float:
             share_float = stock.info.get('sharesOutstanding')
-            data_source = "⚠️Yahoo(总股本)"
+            data_source = "⚠️总股本"
 
-        # 打印来源，方便调试
-        print(f"   📊 股本来源: {data_source} ({share_float/1000000:.2f}M)")
+        # 打印来源
+        print(f"   📊 股本: {share_float/1000000:.2f}M (来源: {data_source})")
 
         turnover_rate = (volume / share_float) if share_float else 0
         avg_vol = hist['Volume'].mean()
         vol_ratio = round(volume / avg_vol, 1) if avg_vol > 0 else 0
         
-        # --- 警报逻辑 ---
-        price_pos = (price - low_p) / (high_p - low_p) if (high_p - low_p) != 0 else 0.5
+        # --- 严选评级 ---
+        status = "L2-观察池"
+        if price > ma_close: status = "L1-初选池"
+        if vol_ratio > 2.0 and price > open_p: status = "L3-核心池"
+
         is_red_alert = False
         alert_msg = ""
-        
-        if turnover_rate > 0.5 and price_pos < 0.3:
+        if turnover_rate > 0.5:
             is_red_alert = True
-            alert_msg = f"🚨 警报：天量出货 (换手 {turnover_rate:.1%})"
-        elif turnover_rate > 0.6:
-            is_red_alert = True
-            alert_msg = f"🚨 警报：极端换手 ({turnover_rate:.1%})"
-
-        # --- 🏆 严选评级逻辑 (解决L1爆满) ---
-        # 默认全部去 L2 (平庸)
-        status = "L2-观察池"
-        
-        # 晋升 L1 (强势): 必须站上均线
-        if price > ma_close: 
-            status = "L1-初选池"
-            
-        # 晋升 L3 (核心): 量比放大 + 阳线
-        if vol_ratio > 2.0 and price > open_p: 
-            status = "L3-核心池"
-            
-        # 风险股强制降级到 L1 或 L2，不给 L3
-        if is_red_alert: 
-            status = "L1-初选池"
+            alert_msg = f"🚨 高换手 ({turnover_rate:.1%})"
+            status = "L1-初选池" # 风险降级
 
         atr = (hist['High'] - hist['Low']).mean()
         stop_loss = round(price - (2.5 * atr), 2)
@@ -161,7 +137,7 @@ def get_stock_logic(ticker):
             "turnover": round(turnover_rate * 100, 2),
             "alert": is_red_alert,
             "alert_msg": alert_msg,
-            "source": data_source # 传递来源
+            "source": data_source
         }
     except Exception as e:
         print(f"❌ {ticker} 计算出错: {e}")
@@ -169,8 +145,7 @@ def get_stock_logic(ticker):
 
 def update_notion(ticker, data):
     try:
-        # --- 🕒 时间戳修正 (美国中部时间 CST) ---
-        # UTC - 6小时 (简单粗暴，无需额外库)
+        # 美中时间 (CST)
         cst_time = datetime.utcnow() - timedelta(hours=6)
         time_str = cst_time.strftime("%m-%d %H:%M CST")
         
@@ -184,27 +159,40 @@ def update_notion(ticker, data):
             "Tags": {"multi_select": tags}
         }
         
-        # 内容块
+        # --- 修复点：严格构造 rich_text ---
+        # 必须把 type, text, annotations 分开写，不能嵌套错
+        text_parts = [
+            {
+                "type": "text",
+                "text": {"content": f"💰 现价: ${data['price']} | 🛡️ 止损: ${data['stop']}\n"},
+            },
+            {
+                "type": "text",
+                "text": {"content": f"📊 换手: {data['turnover']}% | 量比: {data['vol']}x\n"},
+            },
+            {
+                "type": "text",
+                "text": {"content": f"ℹ️ 源: {data['source']} | 🕒 {time_str}\n"},
+                "annotations": {"color": "gray", "italic": True} # ✅ 放在这里才对
+            }
+        ]
+        
+        if data['alert']:
+            text_parts.append({
+                "type": "text",
+                "text": {"content": f"{data['alert_msg']}"},
+                "annotations": {"color": "red", "bold": True}
+            })
+
         content_block = {
             "object": "block", 
             "type": "paragraph", 
-            "paragraph": {
-                "rich_text": [
-                    {"text": {"content": f"💰 现价: ${data['price']} | 🛡️ 止损: ${data['stop']}\n"}},
-                    {"text": {"content": f"📊 换手: {data['turnover']}% | 量比: {data['vol']}x\n"}},
-                    # 显示数据来源和时间
-                    {"text": {"content": f"ℹ️ 数据源: {data['source']} | 🕒 {time_str}\n", "annotations": {"color": "gray", "italic": True}}},
-                    {"text": {"content": f"{data['alert_msg']}" if data['alert'] else "", "annotations": {"color": "red"}}}
-                ]
-            }
+            "paragraph": { "rich_text": text_parts }
         }
 
         if page_id:
-            # 1. 更新属性
             notion.pages.update(page_id=page_id, properties=properties)
-            # 2. 清空旧内容 (防止堆积)
-            clear_page_content(page_id)
-            # 3. 写入新内容
+            clear_page_content(page_id) # 先清空
             notion.blocks.children.append(block_id=page_id, children=[content_block])
             print(f"🔄 {ticker} 更新成功")
         else:
@@ -219,7 +207,7 @@ def update_notion(ticker, data):
         print(f"❌ {ticker} 推送失败: {e}")
 
 if __name__ == "__main__":
-    print("🚀 开始执行每日选股任务 (严选模式)...")
+    print("🚀 开始执行每日选股任务...")
     for t in WATCHLIST:
         res = get_stock_logic(t)
         if res:
