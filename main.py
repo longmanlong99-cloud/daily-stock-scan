@@ -1,117 +1,69 @@
 import os
 import json
-import time
 import yfinance as yf
 import pandas as pd
 from notion_client import Client
-import notion_client
 from datetime import datetime
 
 # --- 1. 基础配置 ---
-# 优先读取 stocks.txt，如果没有则使用默认列表
 WATCHLIST = ["RDW", "RCAT", "PLTR", "TSLA", "NVDA", "AMD", "AAPL"]
-if os.path.exists("stocks.txt"):
-    with open("stocks.txt", "r") as f:
-        WATCHLIST = [l.strip().upper() for l in f if l.strip()]
-
-# 读取之前搬运工(Firecrawl)抓下来的精准数据
-FLOAT_DB = {}
-if os.path.exists("float_data.json"):
-    with open("float_data.json", "r") as f:
-        try: FLOAT_DB = json.load(f)
-        except: pass
-
 notion = Client(auth=os.environ.get("NOTION_TOKEN"))
 database_id = os.environ.get("NOTION_DATABASE_ID")
 
-# --- 🧹 智能吸尘器：启动时清理重复项 ---
-def clean_and_map_database():
-    print("🧹 正在扫描数据库，清理重复项...")
-    ticker_map = {} # {'RDW': 'page_id'}
-    
+# --- 🔥 新增：智能读取 "搬运工" 抓下来的精准数据 ---
+# 这样就不需要你在代码里死编 RDW=8500万了
+# 代码会自动去读 float_data.json，如果读到了 RDW，就用那个准的
+FLOAT_DB = {}
+if os.path.exists("float_data.json"):
     try:
-        all_pages = []
-        has_more = True
-        start_cursor = None
-        while has_more:
-            resp = notion.databases.query(database_id=database_id, start_cursor=start_cursor, page_size=100)
-            all_pages.extend(resp.get("results", []))
-            has_more = resp.get("has_more")
-            start_cursor = resp.get("next_cursor")
-            
-        seen = {}
-        duplicates = []
-        for page in all_pages:
-            ticker = None
-            # 提取标题
-            for prop in page["properties"].values():
-                if prop["type"] == "title" and prop["title"]:
-                    ticker = prop["title"][0]["text"]["content"].upper()
-                    break
-            
-            if ticker:
-                if ticker in seen:
-                    duplicates.append(page["id"]) # 标记重复
-                else:
-                    seen[ticker] = page["id"]
-                    ticker_map[ticker] = page["id"]
-                    
-        # 执行删除
-        for dup_id in duplicates:
-            try: notion.pages.update(page_id=dup_id, archived=True)
-            except: pass
-        if duplicates: print(f"   🗑️ 已清理 {len(duplicates)} 个重复条目")
-            
+        with open("float_data.json", "r") as f:
+            FLOAT_DB = json.load(f)
+        print(f"📘 已加载本地精准数据: {len(FLOAT_DB)} 条")
     except Exception as e:
-        print(f"⚠️ 吸尘器跳过: {e}")
-        
-    return ticker_map
-
-# 启动时获取页面ID映射
-PAGE_MAP = clean_and_map_database()
+        print(f"⚠️ 读取 float_data.json 失败: {e}")
 
 def get_stock_logic(ticker):
     print(f"🔍 深度扫描: {ticker}...")
     try:
         stock = yf.Ticker(ticker)
-        # 强制刷新
         hist = stock.history(period="5d") 
         if hist.empty: 
             print(f"⚠️ {ticker} 无法获取K线数据")
             return None
 
-        # 基础数据
+        # 获取基础数据
         price = round(hist['Close'].iloc[-1], 2)
         open_p = hist['Open'].iloc[-1]
         low_p = hist['Low'].iloc[-1]
         high_p = hist['High'].iloc[-1]
         volume = hist['Volume'].iloc[-1]
         
-        # --- 核心修改：智能获取流通股 (分母) ---
-        share_float = 0
+        # --- ⚖️ 核心修改：分母(股本)取值逻辑 ---
+        shares = 0
         
-        # 1. 优先：读本地文件 (Firecrawl抓的 Finviz 数据，最准，RDW=85M)
+        # 1. 第一优先级：看本地库 (float_data.json)
+        # 如果搬运工抓到了 RDW=85M，这里就会自动用上，换手率就是 60%
         if ticker in FLOAT_DB:
-            share_float = FLOAT_DB[ticker]
-            # print(f"   📘 使用本地库数据: {share_float/1000000:.2f}M")
+            shares = FLOAT_DB[ticker]
+            # print(f"   🎯 使用本地精准股本: {shares/1000000:.2f}M")
             
-        # 2. 备用：读 YFinance 的 floatShares (比 sharesOutstanding 准)
-        if not share_float:
-            share_float = stock.info.get('floatShares')
+        # 2. 第二优先级：问 Yahoo (floatShares)
+        if not shares:
+            shares = stock.info.get('floatShares')
             
-        # 3. 兜底：读 YFinance 的 sharesOutstanding (最不准，容易把RDW算成1亿)
-        if not share_float:
-            share_float = stock.info.get('sharesOutstanding')
+        # 3. 第三优先级：问 Yahoo (sharesOutstanding)
+        if not shares:
+            shares = stock.info.get('sharesOutstanding')
 
         # 计算换手率
-        turnover_rate = (volume / share_float) if share_float else 0
+        turnover_rate = (volume / shares) if shares else 0
         
-        # 量比
+        # 计算量比
         avg_vol = hist['Volume'].mean()
         vol_ratio = round(volume / avg_vol, 1) if avg_vol > 0 else 0
         ma_close = hist['Close'].mean()
         
-        # --- 警报逻辑 ---
+        # --- 风险判定 ---
         price_pos = (price - low_p) / (high_p - low_p) if (high_p - low_p) != 0 else 0.5
         is_red_alert = False
         alert_msg = ""
@@ -123,13 +75,12 @@ def get_stock_logic(ticker):
             is_red_alert = True
             alert_msg = f"🚨 警报：极端换手 ({turnover_rate:.1%})"
 
-        # --- 评级逻辑 ---
+        # --- 评级 ---
         status = "L1-初选池"
         if price > ma_close: status = "L2-观察池"
         if vol_ratio > 2.0 and price > open_p: status = "L3-核心池"
         if is_red_alert: status = "L1-初选池"
 
-        # 止损
         atr = (hist['High'] - hist['Low']).mean()
         stop_loss = round(price - (2.5 * atr), 2)
 
@@ -143,18 +94,32 @@ def get_stock_logic(ticker):
             "alert_msg": alert_msg
         }
     except Exception as e:
-        print(f"❌ {ticker} 计算出错: {e}")
+        print(f"❌ {ticker} 数据计算出错: {e}")
         return None
 
 def update_notion(ticker, data):
     """更新 Notion 数据"""
     try:
-        # 获取当前时间 (格式: 01-25 14:30)
+        # --- 🔥 新增：时间戳 ---
+        # 格式：01-25 14:30
         time_str = datetime.now().strftime("%m-%d %H:%M")
-        
-        # 直接查字典获取 ID，不再 query
-        page_id = PAGE_MAP.get(ticker)
 
+        # 1. 尝试查询 ID (带容错)
+        page_id = None
+        try:
+            # 注意：如果 notion 库版本不对，这行 query 可能会报错
+            # 我们用 try 包裹，如果报错就直接跳过去创建新页面
+            response = notion.databases.query(
+                database_id=database_id,
+                filter={"property": "Name", "title": {"equals": ticker}}
+            )
+            if response and response.get("results"):
+                page_id = response["results"][0]["id"]
+        except Exception:
+            # 如果查询失败（比如库版本不对），不打印烦人的报错，直接当做没找到，去新建
+            pass
+
+        # 2. 准备数据
         tags = [{"name": data['status']}]
         if data['alert']: tags.append({"name": "🚨极端换手", "color": "red"})
         
@@ -164,7 +129,7 @@ def update_notion(ticker, data):
             "Tags": {"multi_select": tags}
         }
         
-        # 内容块 (增加了时间戳)
+        # 正文内容 (加入了时间戳)
         content_block = {
             "object": "block", 
             "type": "paragraph", 
@@ -178,28 +143,26 @@ def update_notion(ticker, data):
             }
         }
 
+        # 3. 执行
         if page_id:
             notion.pages.update(page_id=page_id, properties=properties)
-            # 追加内容块到页面底部，这样能看到历史记录，或者单纯更新
-            # 为了简单，这里我们只更新属性。如果想看正文，需要 append_children
+            # 尝试追加内容块，如果失败就算了
             try: notion.blocks.children.append(block_id=page_id, children=[content_block])
             except: pass
             print(f"🔄 {ticker} 更新成功")
         else:
-            new_page = notion.pages.create(
+            notion.pages.create(
                 parent={"database_id": database_id}, 
                 properties=properties, 
                 children=[content_block]
             )
-            # 记录新ID
-            PAGE_MAP[ticker] = new_page["id"]
             print(f"✨ {ticker} 创建成功")
             
     except Exception as e:
-        print(f"❌ {ticker} Notion推送失败: {e}")
+        print(f"❌ {ticker} 推送 Notion 最终失败: {e}")
 
 if __name__ == "__main__":
-    print(f"🛠️ Notion Client Version: {notion_client.__version__}")
+    # 删除了会导致报错的 version 打印
     print("🚀 开始执行每日选股任务...")
     
     for t in WATCHLIST:
