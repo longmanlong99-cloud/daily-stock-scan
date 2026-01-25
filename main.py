@@ -1,88 +1,110 @@
 import os
 import json
 import time
+import requests # 👈 只用这个最稳的库
 import yfinance as yf
-from notion_client import Client # 👈 确保引用的是这个库 
 from datetime import datetime, timedelta
 
-# --- 配置 ---
+# --- 1. 配置区 ---
 WATCHLIST = ["RDW", "RCAT", "PLTR", "TSLA", "NVDA", "AMD", "AAPL"]
 if os.path.exists("stocks.txt"):
     with open("stocks.txt", "r") as f:
         WATCHLIST = list(set([l.strip().upper() for l in f if l.strip()]))
 
-notion = Client(auth=os.environ.get("NOTION_TOKEN"))
-database_id = os.environ.get("NOTION_DATABASE_ID")
+# 获取密钥
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
+DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
 
-# --- 加载数据 ---
+# 构造通用的请求头 (模拟浏览器发包)
+HEADERS = {
+    "Authorization": f"Bearer {NOTION_TOKEN}",
+    "Notion-Version": "2022-06-28", # 锁死版本，防止变动
+    "Content-Type": "application/json"
+}
+
+# --- 2. 加载本地数据 ---
 FLOAT_DB = {}
 if os.path.exists("float_data.json"):
     try:
         with open("float_data.json", "r") as f: FLOAT_DB = json.load(f)
+        print(f"📘 已加载本地数据库: {len(FLOAT_DB)} 条记录")
     except: pass
 
-# --- 核心逻辑：智能同步 (参考PDF高级方案) ---
+# --- 3. 核心功能：手写 API 请求 (绕过所有库文件冲突) ---
+
+def notion_api(method, endpoint, payload=None):
+    """万能 API 发送器"""
+    url = f"https://api.notion.com/v1{endpoint}"
+    try:
+        if method == "POST":
+            resp = requests.post(url, headers=HEADERS, json=payload, timeout=20)
+        elif method == "PATCH":
+            resp = requests.patch(url, headers=HEADERS, json=payload, timeout=20)
+        elif method == "DELETE":
+            resp = requests.delete(url, headers=HEADERS, timeout=20)
+        else:
+            resp = requests.get(url, headers=HEADERS, timeout=20)
+        return resp.json()
+    except Exception as e:
+        print(f"⚠️ API 请求异常: {e}")
+        return {}
+
 def sync_notion_data():
-    print("🚀 开始执行智能同步...")
+    print("🚀 启动核弹级直连同步 (无依赖版)...")
     
-    # 1. 获取 Notion 中现有的所有页面 [cite: 35-43]
-    print("📋 [1/3] 正在扫描现有数据库...")
-    existing_pages = {} # 格式: {"RDW": "page_id_123", "AMD": "page_id_456"}
-    
+    # 1. 全量扫描 (直接发 POST 请求查库)
+    print("📋 [1/3] 扫描 Notion...")
+    existing_pages = {}
     has_more = True
     start_cursor = None
     
     while has_more:
-        try:
-            resp = notion.databases.query(
-                database_id=database_id, 
-                start_cursor=start_cursor, 
-                page_size=100
-            )
-            for page in resp.get("results", []):
-                # 提取标题
-                ticker = ""
-                for prop in page["properties"].values():
-                    if prop["type"] == "title" and prop["title"]:
-                        ticker = prop["title"][0]["text"]["content"].upper()
-                        break
-                
-                if ticker:
-                    # 如果有重复的，先把旧的删了，只留一个ID
+        payload = {"page_size": 100}
+        if start_cursor: payload["start_cursor"] = start_cursor
+        
+        # 直接调用 API，不再依赖 query 方法
+        data = notion_api("POST", f"/databases/{DATABASE_ID}/query", payload)
+        
+        for page in data.get("results", []):
+            try:
+                # 解析标题
+                props = page.get("properties", {})
+                name_prop = props.get("Name", {}) or props.get("title", {}) # 兼容不同列名
+                title_list = name_prop.get("title", [])
+                if title_list:
+                    ticker = title_list[0]["text"]["content"].upper()
+                    # 查重逻辑
                     if ticker in existing_pages:
-                        notion.pages.update(page_id=page["id"], archived=True)
+                        # 归档旧的
+                        notion_api("PATCH", f"/pages/{page['id']}", {"archived": True})
                     else:
                         existing_pages[ticker] = page["id"]
-                        
-            has_more = resp.get("has_more")
-            start_cursor = resp.get("next_cursor")
-        except Exception as e:
-            print(f"❌ 扫描失败: {e} (请检查 YML 是否安装了 notion-client)")
-            return
+            except: pass
+            
+        has_more = data.get("has_more", False)
+        start_cursor = data.get("next_cursor")
 
-    # 2. 逐个处理清单里的股票 [cite: 79]
-    print(f"🔄 [2/3] 正在处理 {len(WATCHLIST)} 只股票...")
+    # 2. 处理清单
+    print(f"🔄 [2/3] 更新 {len(WATCHLIST)} 只股票...")
     processed_tickers = []
     
     for ticker in WATCHLIST:
-        data = get_stock_data(ticker) # 获取数据
+        data = get_stock_data(ticker)
         if not data: continue
-        
         processed_tickers.append(ticker)
         
-        # 构造 Notion 内容属性
         cst_time = (datetime.utcnow() - timedelta(hours=6)).strftime("%m-%d %H:%M CST")
-        tags = [{"name": data['status']}]
-        if data['alert']: tags.append({"name": "🚨极端换手", "color": "red"})
         
-        props = {
+        # 构造属性
+        properties = {
             "Name": {"title": [{"text": {"content": ticker}}]},
             "Status": {"select": {"name": data['status']}},
-            "Tags": {"multi_select": tags}
+            "Tags": {"multi_select": [{"name": data['status']}] + 
+                     ([{"name": "🚨极端换手", "color": "red"}] if data['alert'] else [])}
         }
         
-        # 构造正文内容
-        text_blocks = [
+        # 构造正文块
+        children_blocks = [
             {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [
                 {"type": "text", "text": {"content": f"💰 现价: ${data['price']} | 🛡️ 止损: ${data['stop']}\n"}},
                 {"type": "text", "text": {"content": f"📊 换手: {data['turnover']}% | 量比: {data['vol']}x\n"}},
@@ -91,37 +113,40 @@ def sync_notion_data():
             ]}}
         ]
 
-        # --- 分支判断：更新 vs 创建 [cite: 80-89] ---
         if ticker in existing_pages:
-            # 存在 -> 更新 (Update)
+            # 更新
             page_id = existing_pages[ticker]
-            try:
-                notion.pages.update(page_id=page_id, properties=props)
-                # 刷新正文：先清空再添加
-                children = notion.blocks.children.list(block_id=page_id).get("results", [])
-                for block in children: notion.blocks.delete(block_id=block["id"])
-                notion.blocks.children.append(block_id=page_id, children=text_blocks)
-                print(f"   ✅ 更新: {ticker}")
-            except Exception as e: print(f"   ❌ 更新失败 {ticker}: {e}")
+            # 更新属性
+            notion_api("PATCH", f"/pages/{page_id}", {"properties": properties})
+            
+            # 清空旧内容 (获取子块 -> 删除)
+            blocks = notion_api("GET", f"/blocks/{page_id}/children")
+            for block in blocks.get("results", []):
+                notion_api("DELETE", f"/blocks/{block['id']}")
+            
+            # 写入新内容
+            notion_api("PATCH", f"/blocks/{page_id}/children", {"children": children_blocks})
+            print(f"   ✅ 更新: {ticker}")
         else:
-            # 不存在 -> 创建 (Create)
-            try:
-                notion.pages.create(parent={"database_id": database_id}, properties=props, children=text_blocks)
-                print(f"   ✨ 新建: {ticker}")
-            except Exception as e: print(f"   ❌ 新建失败 {ticker}: {e}")
+            # 新建
+            new_page = {
+                "parent": {"database_id": DATABASE_ID},
+                "properties": properties,
+                "children": children_blocks
+            }
+            notion_api("POST", "/pages", new_page)
+            print(f"   ✨ 新建: {ticker}")
 
-    # 3. 清理不在清单里的废弃股票 
+    # 3. 清理
     print("🧹 [3/3] 清理废弃数据...")
     for ticker, page_id in existing_pages.items():
         if ticker not in processed_tickers:
-            try:
-                notion.pages.update(page_id=page_id, archived=True) # 归档即删除 [cite: 45]
-                print(f"   🗑️ 已删除废弃股票: {ticker}")
-            except: pass
+            notion_api("PATCH", f"/pages/{page_id}", {"archived": True})
+            print(f"   🗑️ 删除: {ticker}")
 
-    print("🏁 同步完成！")
+    print("🏁 完成！")
 
-# --- 辅助：获取股票数据 (保持不变) ---
+# --- 辅助函数 (保持不变) ---
 def get_stock_data(ticker):
     try:
         stock = yf.Ticker(ticker)
