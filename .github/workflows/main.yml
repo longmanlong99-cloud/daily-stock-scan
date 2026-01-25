@@ -18,20 +18,20 @@ jobs:
       with:
         python-version: '3.9'
 
-    # 👇👇👇 之前的罪魁祸首就在这里！👇👇👇
+    # 👇👇👇 重点：完全照抄这一段，一个字母都别改 👇👇👇
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # 以前写的是 notion (错)，现在必须是 notion-client (对)
+        # 必须是 notion-client (官方库)，绝对不能是 notion
         pip install requests yfinance notion-client
 
-    # 1. 先抓数据 (制造 JSON)
-    - name: Run Data Updater (Firecrawl)
+    # 1. 抓数据
+    - name: Run Data Updater
       env:
         FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
       run: python update_floats.py
 
-    # 2. 再清理并推送 (读取 JSON)
+    # 2. 运行主程序
     - name: Run Main Logic
       env:
         NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
