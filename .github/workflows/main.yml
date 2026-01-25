@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: '30 20 * * 1-5'
 
+# 👇 这里必须加权限设置，允许机器人修改代码
+permissions:
+  contents: write
+
 jobs:
   run_scan:
     runs-on: ubuntu-latest
@@ -18,20 +22,34 @@ jobs:
       with:
         python-version: '3.9'
 
-    # 👇👇👇 这里的安装列表里，彻底删掉了 notion-client 👇👇👇
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # 只装这两个，绝对不会冲突
+        # 只需要这两个库 (Notion 直连版)
         pip install requests yfinance
 
-    # 1. 抓数据
+    # 1. 智能抓取 (只抓新股)
     - name: Run Data Updater
       env:
         FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
       run: python update_floats.py
 
-    # 2. 运行主程序
+    # 👇👇👇 新增步骤：把抓到的 JSON 文件存回 GitHub 仓库 👇👇👇
+    - name: Commit and Push changes
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        # 检查文件是否有变化
+        if [[ -n $(git status --porcelain float_data.json) ]]; then
+          git add float_data.json
+          git commit -m "📈 Auto-update float data"
+          git push
+          print("✅ 数据已保存回仓库")
+        else
+          echo "✨ 数据无变化，无需提交"
+        fi
+
+    # 2. 运行主程序 (读取 JSON 更新 Notion)
     - name: Run Main Logic
       env:
         NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
