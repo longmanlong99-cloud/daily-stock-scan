@@ -3,10 +3,36 @@ import yfinance as yf
 import pandas as pd
 from notion_client import Client
 
-# --- 1. 基础配置 ---
-WATCHLIST = ["RDW", "RCAT", "PLTR", "TSLA", "NVDA", "AMD", "AAPL"]
+# --- 核心配置 ---
+# 1. Notion 客户端初始化
 notion = Client(auth=os.environ.get("NOTION_TOKEN"))
 database_id = os.environ.get("NOTION_DATABASE_ID")
+
+# 2. 读取外部股票清单函数
+def load_watchlist():
+    """
+    优先读取 stocks.txt 文件。
+    如果文件不存在，使用默认列表。
+    """
+    default_list = ["AAPL", "NVDA", "TSLA"] # 兜底列表
+    file_path = "stocks.txt"
+    
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                # 读取每一行，去除空格和换行符，并过滤空行
+                lines = [line.strip().upper() for line in f if line.strip()]
+            if lines:
+                print(f"📂 成功加载外部清单 ({len(lines)} 只): {lines}")
+                return lines
+    except Exception as e:
+        print(f"⚠️ 读取 stocks.txt 出错: {e}")
+    
+    print("⚠️ 未找到有效 stocks.txt，使用内置默认列表。")
+    return default_list
+
+# 获取监控名单
+WATCHLIST = load_watchlist()
 
 def get_stock_logic(ticker):
     print(f"🔍 深度扫描: {ticker}...")
@@ -25,9 +51,9 @@ def get_stock_logic(ticker):
         high_p = hist['High'].iloc[-1]
         volume = hist['Volume'].iloc[-1]
         
-        # --- 核心修改：优先使用流通股本计算换手率 ---
+        # --- 精确度升级：优先使用流通股本计算换手率 ---
         try:
-            # floatShares = 流通股 (分母更小，换手率更高，更真实)
+            # 优先取 floatShares (流通股)，如果没有则取 sharesOutstanding (总股本)
             shares = stock.info.get('floatShares') or stock.info.get('sharesOutstanding')
             turnover_rate = (volume / shares) if shares else 0
         except:
@@ -48,7 +74,7 @@ def get_stock_logic(ticker):
             is_red_alert = True
             alert_msg = f"🚨 警报：高换手出货 (换手 {turnover_rate:.1%})"
             
-        # 规则 B：换手率 > 30% (极端活跃，无论涨跌都报警)
+        # 规则 B：换手率 > 30% (极端活跃)
         elif turnover_rate > 0.30:
             is_red_alert = True
             alert_msg = f"🚨 警报：超高换手 ({turnover_rate:.1%})"
@@ -61,7 +87,7 @@ def get_stock_logic(ticker):
         # 风险强制降级
         if is_red_alert: status = "L1-初选池"
 
-        # ATR 估算
+        # ATR 止损估算
         atr = (hist['High'] - hist['Low']).mean()
         stop_loss = round(price - (2.5 * atr), 2)
 
@@ -98,7 +124,6 @@ def update_notion(ticker, data):
     # 2. 准备数据
     tags = [{"name": data['status']}]
     if data['alert']: tags.append({"name": "🚨极端换手", "color": "red"})
-    # 如果换手率 > 10% 就打个橙色标签提示活跃
     if 0.10 < data['turnover'] <= 20: tags.append({"name": "活跃/博弈", "color": "orange"})
     
     properties = {
@@ -136,8 +161,11 @@ def update_notion(ticker, data):
 
 if __name__ == "__main__":
     print("🚀 开始运行...")
-    for t in WATCHLIST:
-        res = get_stock_logic(t)
-        if res:
-            update_notion(t, res)
+    if not WATCHLIST:
+        print("❌ 监控名单为空，请检查 stocks.txt")
+    else:
+        for t in WATCHLIST:
+            res = get_stock_logic(t)
+            if res:
+                update_notion(t, res)
     print("🏁 完成！")
