@@ -1,180 +1,4 @@
 {
-    "IREN": {
-        "price": 56.68,
-        "volume": 56438700,
-        "ma200": 30.41,
-        "vol_ratio": 1.1,
-        "rsi": 69.1,
-        "atr": 5.13,
-        "max_pain": 24.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:19:55"
-    },
-    "BTCS": {
-        "price": 2.67,
-        "volume": 414900,
-        "ma200": 3.43,
-        "vol_ratio": 0.7,
-        "rsi": 39.8,
-        "atr": 0.17,
-        "max_pain": 2.5,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:19:57"
-    },
-    "ASST": {
-        "price": 0.87,
-        "volume": 76184600,
-        "ma200": 3.22,
-        "vol_ratio": 0.9,
-        "rsi": 50.4,
-        "atr": 0.11,
-        "max_pain": 0.5,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:19:59"
-    },
-    "NMG": {
-        "price": 3.06,
-        "volume": 892900,
-        "ma200": 2.29,
-        "vol_ratio": 0.9,
-        "rsi": 69.8,
-        "atr": 0.17,
-        "max_pain": 7.5,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:02"
-    },
-    "ONDS": {
-        "price": 12.17,
-        "volume": 79094200,
-        "ma200": 5.18,
-        "vol_ratio": 0.6,
-        "rsi": 56.0,
-        "atr": 1.64,
-        "max_pain": 2.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:04"
-    },
-    "MSFT": {
-        "price": 465.95,
-        "volume": 37962400,
-        "ma200": 482.81,
-        "vol_ratio": 1.2,
-        "rsi": 45.7,
-        "atr": 10.24,
-        "max_pain": 270.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:06"
-    },
-    "BITF": {
-        "price": 2.74,
-        "volume": 36080300,
-        "ma200": 2.07,
-        "vol_ratio": 1.0,
-        "rsi": 54.2,
-        "atr": 0.24,
-        "max_pain": 0.5,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:08"
-    },
-    "CIFR": {
-        "price": 17.57,
-        "volume": 41599500,
-        "ma200": 10.32,
-        "vol_ratio": 1.1,
-        "rsi": 57.0,
-        "atr": 1.86,
-        "max_pain": 1.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:11"
-    },
-    "ZETA": {
-        "price": 21.75,
-        "volume": 8053100,
-        "ma200": 17.18,
-        "vol_ratio": 0.8,
-        "rsi": 57.7,
-        "atr": 1.36,
-        "max_pain": 5.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:13"
-    },
-    "QSI": {
-        "price": 1.25,
-        "volume": 4083000,
-        "ma200": 1.51,
-        "vol_ratio": 0.8,
-        "rsi": 57.6,
-        "atr": 0.09,
-        "max_pain": 0.5,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:15"
-    },
-    "OSCR": {
-        "price": 15.68,
-        "volume": 5326400,
-        "ma200": 16.33,
-        "vol_ratio": 0.6,
-        "rsi": 55.0,
-        "atr": 1.07,
-        "max_pain": 5.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:17"
-    },
-    "RXRX": {
-        "price": 4.73,
-        "volume": 18263700,
-        "ma200": 5.02,
-        "vol_ratio": 0.7,
-        "rsi": 60.2,
-        "atr": 0.31,
-        "max_pain": 0.5,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:19"
-    },
-    "CRWV": {
-        "price": 92.98,
-        "volume": 20331400,
-        "ma200": 104.09,
-        "vol_ratio": 0.8,
-        "rsi": 65.5,
-        "atr": 7.43,
-        "max_pain": 40.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:22"
-    },
-    "DLO": {
-        "price": 14.39,
-        "volume": 1254100,
-        "ma200": 12.43,
-        "vol_ratio": 0.9,
-        "rsi": 53.4,
-        "atr": 0.65,
-        "max_pain": 9.0,
-        "pcr": 0.77,
-        "last_updated": "2026-01-26 06:20:24"
-    },
-    "BTBT": {
-        "price": 2.11,
-        "volume": 24331300,
-        "ma200": 2.7,
-        "vol_ratio": 0.8,
-        "rsi": 54.4,
-        "atr": 0.16,
-        "max_pain": 0.5,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:26"
-    },
-    "CAN": {
-        "price": 0.73,
-        "volume": 9817200,
-        "ma200": 0.87,
-        "vol_ratio": 0.5,
-        "rsi": 45.8,
-        "atr": 0.06,
-        "max_pain": 0.5,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:28"
-    },
     "RDW": {
         "price": 12.52,
         "volume": 50288400,
@@ -184,95 +8,7 @@
         "atr": 1.4,
         "max_pain": 1.5,
         "pcr": 0,
-        "last_updated": "2026-01-26 06:20:31"
-    },
-    "OPEN": {
-        "price": 6.01,
-        "volume": 63686400,
-        "ma200": 4.37,
-        "vol_ratio": 1.1,
-        "rsi": 49.4,
-        "atr": 0.56,
-        "max_pain": 2.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:33"
-    },
-    "TSLA": {
-        "price": 449.06,
-        "volume": 56636400,
-        "ma200": 372.76,
-        "vol_ratio": 0.9,
-        "rsi": 54.9,
-        "atr": 14.49,
-        "max_pain": 80.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:35"
-    },
-    "NBIS": {
-        "price": 94.5,
-        "volume": 10018900,
-        "ma200": 72.96,
-        "vol_ratio": 0.7,
-        "rsi": 54.4,
-        "atr": 7.8,
-        "max_pain": 45.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:38"
-    },
-    "NVDA": {
-        "price": 187.67,
-        "volume": 142524700,
-        "ma200": 165.69,
-        "vol_ratio": 0.8,
-        "rsi": 48.3,
-        "atr": 5.32,
-        "max_pain": 50.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:40"
-    },
-    "PLTR": {
-        "price": 169.6,
-        "volume": 30210700,
-        "ma200": 157.17,
-        "vol_ratio": 0.7,
-        "rsi": 52.2,
-        "atr": 7.04,
-        "max_pain": 90.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:42"
-    },
-    "GAME": {
-        "price": 0.46,
-        "volume": 1059700,
-        "ma200": 0.75,
-        "vol_ratio": 1.4,
-        "rsi": 57.1,
-        "atr": 0.03,
-        "max_pain": null,
-        "pcr": null,
-        "last_updated": "2026-01-26 06:20:44"
-    },
-    "AAPL": {
-        "price": 248.04,
-        "volume": 41625700,
-        "ma200": 234.73,
-        "vol_ratio": 0.7,
-        "rsi": 12.1,
-        "atr": 5.06,
-        "max_pain": 120.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:47"
-    },
-    "BULL": {
-        "price": 7.84,
-        "volume": 7503700,
-        "ma200": 12.75,
-        "vol_ratio": 0.9,
-        "rsi": 40.7,
-        "atr": 0.33,
-        "max_pain": 4.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:49"
+        "last_updated": "2026-01-26 06:41:07"
     },
     "SLNH": {
         "price": 1.33,
@@ -283,51 +19,7 @@
         "atr": 0.2,
         "max_pain": null,
         "pcr": null,
-        "last_updated": "2026-01-26 06:20:51"
-    },
-    "POET": {
-        "price": 6.91,
-        "volume": 14123600,
-        "ma200": 5.62,
-        "vol_ratio": 0.9,
-        "rsi": 46.7,
-        "atr": 0.75,
-        "max_pain": 1.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:53"
-    },
-    "ACHR": {
-        "price": 8.61,
-        "volume": 32641300,
-        "ma200": 9.56,
-        "vol_ratio": 0.7,
-        "rsi": 56.4,
-        "atr": 0.6,
-        "max_pain": 3.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:56"
-    },
-    "RCAT": {
-        "price": 16.06,
-        "volume": 13711300,
-        "ma200": 8.88,
-        "vol_ratio": 0.7,
-        "rsi": 80.3,
-        "atr": 1.69,
-        "max_pain": 3.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:20:58"
-    },
-    "JOBY": {
-        "price": 13.93,
-        "volume": 14785000,
-        "ma200": 13.0,
-        "vol_ratio": 0.7,
-        "rsi": 46.6,
-        "atr": 1.13,
-        "max_pain": 1.0,
-        "pcr": 0,
-        "last_updated": "2026-01-26 06:21:00"
+        "last_updated": "2026-01-26 06:41:10"
     },
     "SBET": {
         "price": 9.75,
@@ -338,7 +30,40 @@
         "atr": 0.63,
         "max_pain": 5.0,
         "pcr": 0,
-        "last_updated": "2026-01-26 06:21:03"
+        "last_updated": "2026-01-26 06:41:12"
+    },
+    "TSLA": {
+        "price": 449.06,
+        "volume": 56636400,
+        "ma200": 372.76,
+        "vol_ratio": 0.9,
+        "rsi": 54.9,
+        "atr": 14.49,
+        "max_pain": 80.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:14"
+    },
+    "BULL": {
+        "price": 7.84,
+        "volume": 7503700,
+        "ma200": 12.75,
+        "vol_ratio": 0.9,
+        "rsi": 40.7,
+        "atr": 0.33,
+        "max_pain": 4.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:17"
+    },
+    "ONDS": {
+        "price": 12.17,
+        "volume": 79094200,
+        "ma200": 5.18,
+        "vol_ratio": 0.6,
+        "rsi": 56.0,
+        "atr": 1.64,
+        "max_pain": 2.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:19"
     },
     "ELBM": {
         "price": 1.19,
@@ -349,18 +74,128 @@
         "atr": 0.07,
         "max_pain": null,
         "pcr": null,
-        "last_updated": "2026-01-26 06:21:05"
+        "last_updated": "2026-01-26 06:41:21"
     },
-    "DFLI": {
-        "price": 3.81,
-        "volume": 829000,
-        "ma200": 5.41,
+    "JOBY": {
+        "price": 13.93,
+        "volume": 14785000,
+        "ma200": 13.0,
+        "vol_ratio": 0.7,
+        "rsi": 46.6,
+        "atr": 1.13,
+        "max_pain": 1.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:24"
+    },
+    "RCAT": {
+        "price": 16.06,
+        "volume": 13711300,
+        "ma200": 8.88,
+        "vol_ratio": 0.7,
+        "rsi": 80.3,
+        "atr": 1.69,
+        "max_pain": 3.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:26"
+    },
+    "BTCS": {
+        "price": 2.67,
+        "volume": 414900,
+        "ma200": 3.43,
+        "vol_ratio": 0.7,
+        "rsi": 39.8,
+        "atr": 0.17,
+        "max_pain": 2.5,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:28"
+    },
+    "CRWV": {
+        "price": 92.98,
+        "volume": 20331400,
+        "ma200": 104.09,
+        "vol_ratio": 0.8,
+        "rsi": 65.5,
+        "atr": 7.43,
+        "max_pain": 40.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:31"
+    },
+    "DLO": {
+        "price": 14.39,
+        "volume": 1254100,
+        "ma200": 12.43,
+        "vol_ratio": 0.9,
+        "rsi": 53.4,
+        "atr": 0.65,
+        "max_pain": 9.0,
+        "pcr": 0.77,
+        "last_updated": "2026-01-26 06:41:33"
+    },
+    "CIFR": {
+        "price": 17.57,
+        "volume": 41599500,
+        "ma200": 10.32,
+        "vol_ratio": 1.1,
+        "rsi": 57.0,
+        "atr": 1.86,
+        "max_pain": 1.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:35"
+    },
+    "OSCR": {
+        "price": 15.68,
+        "volume": 5326400,
+        "ma200": 16.33,
+        "vol_ratio": 0.6,
+        "rsi": 55.0,
+        "atr": 1.07,
+        "max_pain": 5.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:37"
+    },
+    "QSI": {
+        "price": 1.25,
+        "volume": 4083000,
+        "ma200": 1.51,
+        "vol_ratio": 0.8,
+        "rsi": 57.6,
+        "atr": 0.09,
+        "max_pain": 0.5,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:40"
+    },
+    "NMG": {
+        "price": 3.06,
+        "volume": 892900,
+        "ma200": 2.29,
+        "vol_ratio": 0.9,
+        "rsi": 69.8,
+        "atr": 0.17,
+        "max_pain": 7.5,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:42"
+    },
+    "ZETA": {
+        "price": 21.75,
+        "volume": 8053100,
+        "ma200": 17.18,
+        "vol_ratio": 0.8,
+        "rsi": 57.7,
+        "atr": 1.36,
+        "max_pain": 5.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:44"
+    },
+    "MSFT": {
+        "price": 465.95,
+        "volume": 37962400,
+        "ma200": 482.81,
         "vol_ratio": 1.2,
-        "rsi": 48.6,
-        "atr": 0.43,
-        "max_pain": null,
-        "pcr": null,
-        "last_updated": "2026-01-26 06:21:07"
+        "rsi": 45.7,
+        "atr": 10.24,
+        "max_pain": 270.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:47"
     },
     "HIMS": {
         "price": 29.62,
@@ -371,6 +206,171 @@
         "atr": 1.85,
         "max_pain": 18.0,
         "pcr": 0,
-        "last_updated": "2026-01-26 06:21:09"
+        "last_updated": "2026-01-26 06:41:49"
+    },
+    "PLTR": {
+        "price": 169.6,
+        "volume": 30210700,
+        "ma200": 157.17,
+        "vol_ratio": 0.7,
+        "rsi": 52.2,
+        "atr": 7.04,
+        "max_pain": 90.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:51"
+    },
+    "ASST": {
+        "price": 0.87,
+        "volume": 76184600,
+        "ma200": 3.22,
+        "vol_ratio": 0.9,
+        "rsi": 50.4,
+        "atr": 0.11,
+        "max_pain": 0.5,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:53"
+    },
+    "POET": {
+        "price": 6.91,
+        "volume": 14123600,
+        "ma200": 5.62,
+        "vol_ratio": 0.9,
+        "rsi": 46.7,
+        "atr": 0.75,
+        "max_pain": 1.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:56"
+    },
+    "IREN": {
+        "price": 56.68,
+        "volume": 56438700,
+        "ma200": 30.41,
+        "vol_ratio": 1.1,
+        "rsi": 69.1,
+        "atr": 5.13,
+        "max_pain": 24.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:41:58"
+    },
+    "NVDA": {
+        "price": 187.67,
+        "volume": 142524700,
+        "ma200": 165.69,
+        "vol_ratio": 0.8,
+        "rsi": 48.3,
+        "atr": 5.32,
+        "max_pain": 50.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:42:00"
+    },
+    "ACHR": {
+        "price": 8.61,
+        "volume": 32641300,
+        "ma200": 9.56,
+        "vol_ratio": 0.7,
+        "rsi": 56.4,
+        "atr": 0.6,
+        "max_pain": 3.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:42:03"
+    },
+    "BITF": {
+        "price": 2.74,
+        "volume": 36080300,
+        "ma200": 2.07,
+        "vol_ratio": 1.0,
+        "rsi": 54.2,
+        "atr": 0.24,
+        "max_pain": 0.5,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:42:05"
+    },
+    "GAME": {
+        "price": 0.46,
+        "volume": 1059700,
+        "ma200": 0.75,
+        "vol_ratio": 1.4,
+        "rsi": 57.1,
+        "atr": 0.03,
+        "max_pain": null,
+        "pcr": null,
+        "last_updated": "2026-01-26 06:42:07"
+    },
+    "BTBT": {
+        "price": 2.11,
+        "volume": 24331300,
+        "ma200": 2.7,
+        "vol_ratio": 0.8,
+        "rsi": 54.4,
+        "atr": 0.16,
+        "max_pain": 0.5,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:42:09"
+    },
+    "AAPL": {
+        "price": 248.04,
+        "volume": 41625700,
+        "ma200": 234.73,
+        "vol_ratio": 0.7,
+        "rsi": 12.1,
+        "atr": 5.06,
+        "max_pain": 120.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:42:11"
+    },
+    "NBIS": {
+        "price": 94.5,
+        "volume": 10018900,
+        "ma200": 72.96,
+        "vol_ratio": 0.7,
+        "rsi": 54.4,
+        "atr": 7.8,
+        "max_pain": 45.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:42:14"
+    },
+    "CAN": {
+        "price": 0.73,
+        "volume": 9817200,
+        "ma200": 0.87,
+        "vol_ratio": 0.5,
+        "rsi": 45.8,
+        "atr": 0.06,
+        "max_pain": 0.5,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:42:16"
+    },
+    "RXRX": {
+        "price": 4.73,
+        "volume": 18263700,
+        "ma200": 5.02,
+        "vol_ratio": 0.7,
+        "rsi": 60.2,
+        "atr": 0.31,
+        "max_pain": 0.5,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:42:18"
+    },
+    "OPEN": {
+        "price": 6.01,
+        "volume": 63686400,
+        "ma200": 4.37,
+        "vol_ratio": 1.1,
+        "rsi": 49.4,
+        "atr": 0.56,
+        "max_pain": 2.0,
+        "pcr": 0,
+        "last_updated": "2026-01-26 06:42:21"
+    },
+    "DFLI": {
+        "price": 3.81,
+        "volume": 829000,
+        "ma200": 5.41,
+        "vol_ratio": 1.2,
+        "rsi": 48.6,
+        "atr": 0.43,
+        "max_pain": null,
+        "pcr": null,
+        "last_updated": "2026-01-26 06:42:23"
     }
 }
