@@ -89,7 +89,7 @@ def get_stock_data(ticker):
             alert = True
             alert_msg = f"⚡ 偏离痛点 {abs(pain_deviation):.0%} (Pain:${max_pain})"
     
-    if turnover > 0.5:
+    if turnover > 0.2:
         alert = True
         alert_msg = f"🚨 极端换手 {turnover:.1%}"
 
@@ -114,7 +114,7 @@ def get_stock_data(ticker):
         tags.append({"name": "💎RSI超卖", "color": "green"})
 
     # C. 自动生成点评
-    commentary = "👨‍⚕️ 医生点评: "
+    commentary = "👨‍⚕️ 点评: "
     
     if price > ma200: commentary += "长期趋势向上，"
     else: commentary += "长期趋势走弱，"
@@ -263,3 +263,4 @@ def sync_notion_data():
 
 if __name__ == "__main__":
     sync_notion_data()
+
