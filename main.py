@@ -76,6 +76,7 @@ def get_stock_data(ticker):
     pcr = md.get('pcr')
     if pcr is None: pcr = 0
     
+    # 计算换手率
     turnover = (md['volume'] / share_float) if share_float else 0
     
     # --- 1. 状态判定 ---
@@ -88,31 +89,57 @@ def get_stock_data(ticker):
     if price > ma200 or md.get('vol_ratio', 0) > 2.0:
         status = "L2-观察池"
         
-    # --- L3 逻辑 (已优化：防 NBIS 类妖股误报) ---
+    # --- L3 逻辑 (痛点 + 换手率深度博弈) ---
     pain_deviation = 0
     is_pain_alert = False # 标记是否触发了痛点警报
+    pain_status_desc = "" 
     
     if max_pain:
         pain_deviation = (price - max_pain) / max_pain
         abs_dev = abs(pain_deviation)
         
-        # [优化点1] 动态阈值：如果 RSI 在 45-55 震荡区，用 0.2；如果是趋势行情，放宽到 0.4
+        # [逻辑A] 动态阈值 (震荡期严，趋势期宽)
         threshold = 0.2 if (45 <= rsi <= 55) else 0.4
         
-        # [优化点2] 熔断机制：偏差 > 80% (0.8) 说明痛点已失效，不再报警
-        # 只有在 "阈值 < 偏差 < 80%" 时才触发警报
-        if threshold < abs_dev < 0.8:
-            status = "L3-核心池"
-            alert = True
-            is_pain_alert = True
-            alert_msg = f"⚡ 偏离痛点 {abs_dev:.0%} (Pain:${max_pain})"
-    
-    if turnover > 0.2:
+        # [逻辑B] 换手率豁免 (Key Point!)
+        # >15% (0.15) 视为活跃，忽略痛点引力
+        is_active_turnover = (turnover > 0.15)
+        
+        # [逻辑C] 痛点失效判定
+        # 如果偏差 > 80% (0.8) 或者 换手活跃，则痛点逻辑失效（不报警偏离）
+        is_pain_failed = (abs_dev > 0.8) or is_active_turnover
+        
+        if not is_pain_failed:
+            if abs_dev > threshold:
+                status = "L3-核心池"
+                alert = True
+                is_pain_alert = True
+                alert_msg = f"⚡ 偏离痛点 {abs_dev:.0%} (Pain:${max_pain})"
+                pain_status_desc = "偏离需回归"
+        else:
+            # 虽然痛点失效，但我们要区分是 "好事(突破)" 还是 "坏事(太妖)"
+            if is_active_turnover:
+                pain_status_desc = "放量博弈" # 中性词，具体看换手率大小
+            else:
+                pain_status_desc = "趋势脱离引力"
+
+    # --- 换手率独立警报 (分层防御) ---
+    # 💀 死亡换手层 (>40%)：极度危险，可能是出货
+    if turnover > 0.4:
         alert = True
-        alert_msg = f"🚨 极端换手 {turnover:.1%}"
+        alert_msg = f"💀 死亡换手 {turnover:.1%} (警惕见顶/出货)"
+        # 如果此时 RSI 还很高，几乎必死
+        if rsi > 75: alert_msg += " + RSI过热"
+        
+    # 🚨 极端换手层 (>20%)：非常活跃
+    elif turnover > 0.2:
+        alert = True
+        # 如果没被上面的死亡换手覆盖，才显示这个
+        if "死亡换手" not in alert_msg:
+            alert_msg = f"🚨 极端换手 {turnover:.1%}"
 
     # --- 2. 智能文案生成 ---
-    # A. PCR 解读
+    # A. PCR
     pcr_desc = "情绪中性"
     if pcr > 0:
         if pcr < 0.6: 
@@ -122,7 +149,7 @@ def get_stock_data(ticker):
             pcr_desc = "极度悲观"
             tags.append({"name": "🐻极度悲观", "color": "gray"})
     
-    # B. RSI 解读
+    # B. RSI
     rsi_desc = "正常"
     if rsi > 75: 
         rsi_desc = "严重超买"
@@ -131,33 +158,25 @@ def get_stock_data(ticker):
         rsi_desc = "超卖区"
         tags.append({"name": "💎RSI超卖", "color": "green"})
 
-    # C. 自动生成点评
+    # C. 点评 (针对 50% 换手率优化)
     commentary = "👨‍⚕️ 点评: "
+    if price > ma200: commentary += "长期趋势向上。"
+    else: commentary += "长期趋势走弱。"
     
-    if price > ma200: commentary += "长期趋势向上，"
-    else: commentary += "长期趋势走弱，"
-    
-    risk_factors = []
-    if rsi > 75: risk_factors.append("RSI过热")
-    if pcr > 0 and pcr < 0.6: risk_factors.append("散户情绪过于狂热")
-    
-    # 只有当痛点逻辑判定为“有效偏离”时，才写入风险提示
-    if is_pain_alert: 
-        risk_factors.append("价格偏离痛点需回归")
-    
-    if risk_factors:
-        commentary += f"但 {'、'.join(risk_factors)}，谨防短期回调。"
-        # 如果痛点有效且触发警报，才提示关注牵引力
-        if is_pain_alert and max_pain: 
-            commentary += f" 关注痛点 ${max_pain} 的牵引力。"
+    # 风险因子
+    if is_pain_alert:
+        commentary += f" 但价格严重偏离痛点（{abs(pain_deviation):.0%}），且换手不足，谨防回落。"
+    elif turnover > 0.4:
+        # 针对 40%+ 换手的特殊点评
+        commentary += f" ⚠️ 注意：出现 {turnover:.1%} 的死亡换手率！这通常是多空决战或主力出货信号，若股价滞涨务必离场。"
+    elif max_pain and pain_status_desc == "放量博弈":
+        commentary += f" 配合 {turnover:.1%} 的高换手，动能极强，已突破痛点压制（关注资金接力情况）。"
+    elif max_pain and pain_status_desc == "趋势脱离引力":
+        commentary += " 动能已无视期权痛点，顺势而为。"
+    elif status == "L2-观察池":
+        commentary += " 量价配合健康，可沿动态止损持有。"
     else:
-        # 如果是因为偏差过大(>80%)而没有触发警报，说明趋势极强
-        if max_pain and abs(pain_deviation) >= 0.8:
-            commentary += "当前动能极强，痛点引力已失效，顺势而为。"
-        elif status == "L2-观察池": 
-            commentary += "量价配合健康，可沿动态止损持有。"
-        else: 
-            commentary += "目前处于震荡观察期。"
+        commentary += " 震荡观察。"
 
     # --- 3. 标签与止损 ---
     tags.insert(0, {"name": status})
@@ -173,7 +192,8 @@ def get_stock_data(ticker):
         "source": source,
         "alert": alert, "alert_msg": alert_msg,
         "max_pain": max_pain,
-        "pain_deviation_abs": abs(pain_deviation), # 传出去用于显示颜色
+        "pain_deviation_abs": abs(pain_deviation),
+        "pain_status_desc": pain_status_desc, 
         "rsi": rsi, "rsi_desc": rsi_desc,
         "pcr": pcr, "pcr_desc": pcr_desc,
         "tags": tags,
@@ -181,7 +201,7 @@ def get_stock_data(ticker):
     }
 
 def sync_notion_data():
-    print("🚀 启动 Notion 同步 (痛点逻辑优化版)...")
+    print("🚀 启动 Notion 同步 (死亡换手预警版)...")
     
     # 1. 扫描
     print("📋 [1/3] 扫描 Notion...")
@@ -218,7 +238,6 @@ def sync_notion_data():
             "Tags": {"multi_select": data['tags']}
         }
         
-        # --- 构造 Rich Text ---
         rich_text_list = []
 
         # Line 1
@@ -231,13 +250,20 @@ def sync_notion_data():
         line2 = f"{rsi_info} | {pcr_info}\n"
         rich_text_list.append({"type": "text", "text": {"content": line2}})
 
-        # Line 3
-        pain_info = f"🎯 痛点: ${data['max_pain']} (庄家目标)" if data['max_pain'] else "痛点: --"
+        # Line 3 (精细化显示)
+        pain_str = "痛点: --"
+        if data['max_pain']:
+            pain_str = f"🎯 痛点: ${data['max_pain']}"
+            if data['pain_status_desc'] == "放量博弈":
+                 pain_str += " (🔥天量)"
+            elif data['pain_status_desc'] == "趋势脱离引力":
+                 pain_str += " (🚀失效)"
+        
         vol_info = f"📈 换手: {data['turnover']}%"
-        line3 = f"{pain_info} | {vol_info}\n"
+        line3 = f"{pain_str} | {vol_info}\n"
         rich_text_list.append({"type": "text", "text": {"content": line3}})
 
-        # 医生点评
+        # 点评
         if data['commentary']:
             rich_text_list.append({
                 "type": "text", 
@@ -245,27 +271,32 @@ def sync_notion_data():
                 "annotations": {"color": "gray", "italic": True}
             })
 
-        # 底部信息
+        # 底部
         rich_text_list.append({
             "type": "text", 
             "text": {"content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n"},
             "annotations": {"color": "gray"}
         })
 
-        # 警报信息
+        # 警报 (逻辑升级)
         if data['alert'] and data['alert_msg']:
+            # 如果是死亡换手，用紫色或粗体强调
+            color = "red"
+            if "死亡换手" in data['alert_msg']:
+                color = "purple" # Notion 支持 purple，表示更高级别的警报
+            
             rich_text_list.append({
                 "type": "text", 
                 "text": {"content": data['alert_msg']},
-                "annotations": {"color": "red"}
+                "annotations": {"color": color, "bold": True}
             })
         
-        # 如果没有警报，但是痛点偏差极大(>80%)，显示一条特殊的红色提示
-        if not data['alert'] and data['max_pain'] and data['pain_deviation_abs'] >= 0.8:
+        # 补充提示
+        if not data['alert'] and data['pain_status_desc'] == "放量博弈":
              rich_text_list.append({
                 "type": "text", 
-                "text": {"content": f"⚡ 偏离痛点 {data['pain_deviation_abs']:.0%} (趋势极强，痛点失效)"},
-                "annotations": {"color": "orange"} # 用橙色区分，表示注意但不是坏事
+                "text": {"content": f"🔥 换手活跃 ({data['turnover']}%)，暂时无视痛点引力"},
+                "annotations": {"color": "blue"}
             })
 
         children_blocks = [
