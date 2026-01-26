@@ -1,327 +1,164 @@
-import os
 import json
-import time
-import requests
-from datetime import datetime, timedelta
+import os
+import sys
 
-# --- 配置区 ---
-WATCHLIST = ["RDW", "RCAT", "PLTR", "TSLA", "NVDA", "AMD", "AAPL"]
-if os.path.exists("stocks.txt"):
-    with open("stocks.txt", "r") as f:
-        WATCHLIST = list(set([l.strip().upper() for l in f if l.strip()]))
-
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
-DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
-
-HEADERS = {
-    "Authorization": f"Bearer {NOTION_TOKEN}",
-    "Notion-Version": "2022-06-28",
-    "Content-Type": "application/json"
+# ==========================================
+# 1. 策略配置 (Strategy Config)
+# ==========================================
+CONFIG = {
+    "LARGE_CAP_THRESHOLD": 10_000_000_000, # 100亿定义为大盘
+    "LARGE_CAP_TURNOVER_LIMIT": 0.05,      # 大盘股 > 5% 换手 = 危险
+    "SMALL_CAP_TURNOVER_LIMIT": 0.20,      # 小盘股 > 20% 换手 = 危险 (RDW 59% 会被杀)
+    "RSI_MAX_LIMIT": 75,                   # RSI > 75 = 过热
+    "DAILY_DATA_FILE": "daily_cache.json",
+    "FLOAT_DATA_FILE": "float_data.json"
 }
 
-# --- 加载数据 ---
-FLOAT_DB = {}
-if os.path.exists("float_data.json"):
-    try:
-        with open("float_data.json", "r") as f: FLOAT_DB = json.load(f)
-    except: pass
-
-DAILY_CACHE = {}
-if os.path.exists("daily_cache.json"):
-    try:
-        with open("daily_cache.json", "r") as f: DAILY_CACHE = json.load(f)
-        print(f"📗 已加载深度行情缓存: {len(DAILY_CACHE)} 条")
-    except: pass
-
-# --- 核心功能 ---
-
-def notion_api(method, endpoint, payload=None):
-    url = f"https://api.notion.com/v1{endpoint}"
-    try:
-        if method == "POST":
-            resp = requests.post(url, headers=HEADERS, json=payload, timeout=20)
-        elif method == "PATCH":
-            resp = requests.patch(url, headers=HEADERS, json=payload, timeout=20)
-        elif method == "DELETE":
-            resp = requests.delete(url, headers=HEADERS, timeout=20)
-        else:
-            resp = requests.get(url, headers=HEADERS, timeout=20)
-        
-        if resp.status_code >= 400:
-            print(f"⚠️ Notion API Error {resp.status_code}: {resp.text}")
-        return resp.json()
-    except Exception as e:
-        print(f"⚠️ API 请求异常: {e}")
+# ==========================================
+# 2. 工具函数
+# ==========================================
+def load_json_data(filepath):
+    if not os.path.exists(filepath):
+        print(f"❌ 错误: 找不到 {filepath}")
         return {}
+    with open(filepath, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-def get_stock_data(ticker):
-    if ticker not in DAILY_CACHE: return None
+# ==========================================
+# 3. 核心归类逻辑 (Core Logic)
+# ==========================================
+def classify_stock(ticker, data, shares_float):
     
-    md = DAILY_CACHE[ticker]
-    share_float = FLOAT_DB.get(ticker, 0)
-    source = "🔥本地库" if ticker in FLOAT_DB else "⚠️未知"
+    # --- 1. 数据解包 ---
+    price = data.get('price', 0)
+    rsi = data.get('rsi', 50)
+    volume = data.get('volume', 0)
     
-    # 基础数据
-    price = md['price']
-    ma200 = md.get('ma200', price)
-    max_pain = md.get('max_pain') # 可以是 None
+    # 获取均线系统 (由 fetch_data.py 提供)
+    ma20 = data.get('ma20', 0)
+    ma60 = data.get('ma60', 0)
+    ma200 = data.get('ma200', 0)
     
-    # 强制空值转换
-    rsi = md.get('rsi')
-    if rsi is None: rsi = 50
-    
-    atr = md.get('atr')
-    if atr is None: atr = 0
-    
-    pcr = md.get('pcr')
-    if pcr is None: pcr = 0
-    
-    # 计算换手率
-    turnover = (md['volume'] / share_float) if share_float else 0
-    
-    # --- 1. 状态判定 ---
-    status = "L1-初选池"
-    alert = False
-    alert_msg = ""
-    tags = []
-    
-    # L2 逻辑
-    if price > ma200 or md.get('vol_ratio', 0) > 2.0:
-        status = "L2-观察池"
-        
-    # --- L3 逻辑 (痛点 + 换手率深度博弈) ---
-    pain_deviation = 0
-    is_pain_alert = False # 标记是否触发了痛点警报
-    pain_status_desc = "" 
-    
-    if max_pain:
-        pain_deviation = (price - max_pain) / max_pain
-        abs_dev = abs(pain_deviation)
-        
-        # [逻辑A] 动态阈值 (震荡期严，趋势期宽)
-        threshold = 0.2 if (45 <= rsi <= 55) else 0.4
-        
-        # [逻辑B] 换手率豁免 (Key Point!)
-        # >15% (0.15) 视为活跃，忽略痛点引力
-        is_active_turnover = (turnover > 0.15)
-        
-        # [逻辑C] 痛点失效判定
-        # 如果偏差 > 80% (0.8) 或者 换手活跃，则痛点逻辑失效（不报警偏离）
-        is_pain_failed = (abs_dev > 0.8) or is_active_turnover
-        
-        if not is_pain_failed:
-            if abs_dev > threshold:
-                status = "L3-核心池"
-                alert = True
-                is_pain_alert = True
-                alert_msg = f"⚡ 偏离痛点 {abs_dev:.0%} (Pain:${max_pain})"
-                pain_status_desc = "偏离需回归"
-        else:
-            # 虽然痛点失效，但我们要区分是 "好事(突破)" 还是 "坏事(太妖)"
-            if is_active_turnover:
-                pain_status_desc = "放量博弈" # 中性词，具体看换手率大小
-            else:
-                pain_status_desc = "趋势脱离引力"
+    if price == 0 or shares_float == 0:
+        return {"status": "数据缺失", "style": "⚪", "reason": "无法计算", "turnover": 0}
 
-    # --- 换手率独立警报 (分层防御) ---
-    # 💀 死亡换手层 (>40%)：极度危险，可能是出货
-    if turnover > 0.4:
-        alert = True
-        alert_msg = f"💀 死亡换手 {turnover:.1%} (警惕见顶/出货)"
-        # 如果此时 RSI 还很高，几乎必死
-        if rsi > 75: alert_msg += " + RSI过热"
-        
-    # 🚨 极端换手层 (>20%)：非常活跃
-    elif turnover > 0.2:
-        alert = True
-        # 如果没被上面的死亡换手覆盖，才显示这个
-        if "死亡换手" not in alert_msg:
-            alert_msg = f"🚨 极端换手 {turnover:.1%}"
+    # --- 2. 计算核心指标 ---
+    market_cap = price * shares_float
+    turnover_rate = volume / shares_float 
 
-    # --- 2. 智能文案生成 ---
-    # A. PCR
-    pcr_desc = "情绪中性"
-    if pcr > 0:
-        if pcr < 0.6: 
-            pcr_desc = "散户狂热"
-            tags.append({"name": "🐂散户狂热", "color": "yellow"})
-        elif pcr > 1.0: 
-            pcr_desc = "极度悲观"
-            tags.append({"name": "🐻极度悲观", "color": "gray"})
+    # =======================================================
+    # 🚨 逻辑层 A：死亡换手熔断 (The Circuit Breaker)
+    # =======================================================
+    # 目的：不管趋势多好，只要换手率炸了，直接判死刑 (L3)
     
-    # B. RSI
-    rsi_desc = "正常"
-    if rsi > 75: 
-        rsi_desc = "严重超买"
-        tags.append({"name": "🔥RSI过热", "color": "orange"})
-    elif rsi < 30: 
-        rsi_desc = "超卖区"
-        tags.append({"name": "💎RSI超卖", "color": "green"})
+    is_high_risk = False
+    risk_msg = ""
 
-    # C. 点评 (针对 50% 换手率优化)
-    commentary = "👨‍⚕️ 点评: "
-    if price > ma200: commentary += "长期趋势向上。"
-    else: commentary += "长期趋势走弱。"
-    
-    # 风险因子
-    if is_pain_alert:
-        commentary += f" 但价格严重偏离痛点（{abs(pain_deviation):.0%}），且换手不足，谨防回落。"
-    elif turnover > 0.4:
-        # 针对 40%+ 换手的特殊点评
-        commentary += f" ⚠️ 注意：出现 {turnover:.1%} 的死亡换手率！这通常是多空决战或主力出货信号，若股价滞涨务必离场。"
-    elif max_pain and pain_status_desc == "放量博弈":
-        commentary += f" 配合 {turnover:.1%} 的高换手，动能极强，已突破痛点压制（关注资金接力情况）。"
-    elif max_pain and pain_status_desc == "趋势脱离引力":
-        commentary += " 动能已无视期权痛点，顺势而为。"
-    elif status == "L2-观察池":
-        commentary += " 量价配合健康，可沿动态止损持有。"
+    if market_cap > CONFIG["LARGE_CAP_THRESHOLD"]:
+        # 大盘股逻辑
+        if turnover_rate > CONFIG["LARGE_CAP_TURNOVER_LIMIT"]:
+            is_high_risk = True
+            risk_msg = f"大盘股放量滞涨风险 ({turnover_rate*100:.1f}%)"
     else:
-        commentary += " 震荡观察。"
+        # 小盘股逻辑 (RDW 案例在此)
+        # RDW (市值8亿) + 换手 59% -> 0.59 > 0.20 -> 触发熔断
+        if turnover_rate > CONFIG["SMALL_CAP_TURNOVER_LIMIT"]:
+            is_high_risk = True
+            risk_msg = f"小盘股死亡换手 ({turnover_rate*100:.1f}%)"
 
-    # --- 3. 标签与止损 ---
-    tags.insert(0, {"name": status})
-    if alert: tags.append({"name": "🚨警报", "color": "red"})
+    if is_high_risk:
+        return {
+            "status": "L3-高危/异常", 
+            "style": "🚨", 
+            "reason": risk_msg,
+            "turnover": turnover_rate
+        }
+
+    # =======================================================
+    # 🔍 逻辑层 B：L2 晋级判断 (Selection Filter)
+    # =======================================================
+    # 只有通过了逻辑层 A 的股票才会运行到这里
+    # 定义：L2 观察池 = 趋势向上(MA60) + 形态健康(RSI)
     
-    stop_loss = round(price - 3 * atr, 2) if atr > 0 else round(ma200 * 0.95, 2)
+    # 判据 A: 长期趋势 (必须站上 MA60 生命线)
+    trend_ok = price > ma60
+    
+    # 判据 B: RSI 健康 (没有极度超买)
+    rsi_ok = rsi < CONFIG["RSI_MAX_LIMIT"]
+    
+    # (可选) 判据 C: 短期强势 (站上 MA20)
+    # 仅作为备注参考
+    short_term_strong = price > ma20
 
+    if trend_ok and rsi_ok:
+        # 进入 L2 观察池
+        reason_str = "趋势向上(>MA60)"
+        if not short_term_strong:
+            reason_str += " 但短期回踩(<MA20)"
+        else:
+            reason_str += " 且短期强势(>MA20)"
+            
+        return {
+            "status": "L2-观察池", 
+            "style": "🟢", 
+            "reason": reason_str,
+            "turnover": turnover_rate
+        }
+
+    # =======================================================
+    # 🗑️ 默认归类 (L3)
+    # =======================================================
+    # 跌破 MA60，或者 RSI 过热
+    fail_reason = "弱势"
+    if not trend_ok:
+        fail_reason = "跌破中期趋势(MA60)"
+    elif not rsi_ok:
+        fail_reason = f"RSI过热({rsi})"
+        
     return {
-        "price": price, "status": status, 
-        "stop": stop_loss,
-        "turnover": round(turnover*100, 2), 
-        "vol": md.get('vol_ratio', 0),
-        "source": source,
-        "alert": alert, "alert_msg": alert_msg,
-        "max_pain": max_pain,
-        "pain_deviation_abs": abs(pain_deviation),
-        "pain_status_desc": pain_status_desc, 
-        "rsi": rsi, "rsi_desc": rsi_desc,
-        "pcr": pcr, "pcr_desc": pcr_desc,
-        "tags": tags,
-        "commentary": commentary
+        "status": "L3-弱势/观望", 
+        "style": "💤", 
+        "reason": fail_reason,
+        "turnover": turnover_rate
     }
 
-def sync_notion_data():
-    print("🚀 启动 Notion 同步 (死亡换手预警版)...")
+# ==========================================
+# 4. 主程序
+# ==========================================
+def main():
+    print("\n=== 🚀 执行股票归类 (含逻辑层 A - RDW 杀手) ===")
     
-    # 1. 扫描
-    print("📋 [1/3] 扫描 Notion...")
-    existing_pages = {}
-    has_more = True
-    start_cursor = None
-    while has_more:
-        payload = {"page_size": 100}
-        if start_cursor: payload["start_cursor"] = start_cursor
-        data = notion_api("POST", f"/databases/{DATABASE_ID}/query", payload)
-        for page in data.get("results", []):
-            try:
-                ticker = page["properties"]["Name"]["title"][0]["text"]["content"].upper()
-                if ticker in existing_pages: notion_api("PATCH", f"/pages/{page['id']}", {"archived": True})
-                else: existing_pages[ticker] = page["id"]
-            except: pass
-        has_more = data.get("has_more", False)
-        start_cursor = data.get("next_cursor")
-
-    # 2. 更新
-    print(f"🔄 [2/3] 更新 {len(WATCHLIST)} 只股票...")
-    processed_tickers = []
+    # 加载数据
+    daily_cache = load_json_data(CONFIG["DAILY_DATA_FILE"])
+    float_cache = load_json_data(CONFIG["FLOAT_DATA_FILE"])
     
-    for ticker in WATCHLIST:
-        data = get_stock_data(ticker)
-        if not data: continue
-        processed_tickers.append(ticker)
+    if not daily_cache or not float_cache:
+        print("⚠️ 数据文件缺失，请先运行 fetch_data.py 和 update_floats.py")
+        return
+
+    print(f"{'代码':<8} {'现价':<10} {'MA60':<10} {'换手率':<10} {'归类结果':<15} {'详细理由'}")
+    print("-" * 85)
+
+    for ticker, stock_data in daily_cache.items():
+        s_float = float_cache.get(ticker, 0)
         
-        cst_time = (datetime.utcnow() - timedelta(hours=6)).strftime("%m-%d %H:%M CST")
-        
-        properties = {
-            "Name": {"title": [{"text": {"content": ticker}}]},
-            "Status": {"select": {"name": data['status']}},
-            "Tags": {"multi_select": data['tags']}
-        }
-        
-        rich_text_list = []
-
-        # Line 1
-        line1 = f"💰 现价: ${data['price']} | 🛑 动态止损: ${data['stop']} (3ATR)\n"
-        rich_text_list.append({"type": "text", "text": {"content": line1}})
-
-        # Line 2
-        pcr_info = f"🐂 PCR: {data['pcr']} ({data['pcr_desc']})" if data['pcr'] > 0 else "PCR: --"
-        rsi_info = f"📊 RSI: {data['rsi']} ({data['rsi_desc']})"
-        line2 = f"{rsi_info} | {pcr_info}\n"
-        rich_text_list.append({"type": "text", "text": {"content": line2}})
-
-        # Line 3 (精细化显示)
-        pain_str = "痛点: --"
-        if data['max_pain']:
-            pain_str = f"🎯 痛点: ${data['max_pain']}"
-            if data['pain_status_desc'] == "放量博弈":
-                 pain_str += " (🔥天量)"
-            elif data['pain_status_desc'] == "趋势脱离引力":
-                 pain_str += " (🚀失效)"
-        
-        vol_info = f"📈 换手: {data['turnover']}%"
-        line3 = f"{pain_str} | {vol_info}\n"
-        rich_text_list.append({"type": "text", "text": {"content": line3}})
-
-        # 点评
-        if data['commentary']:
-            rich_text_list.append({
-                "type": "text", 
-                "text": {"content": "\n" + data['commentary'] + "\n"},
-                "annotations": {"color": "gray", "italic": True}
-            })
-
-        # 底部
-        rich_text_list.append({
-            "type": "text", 
-            "text": {"content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n"},
-            "annotations": {"color": "gray"}
-        })
-
-        # 警报 (逻辑升级)
-        if data['alert'] and data['alert_msg']:
-            # 如果是死亡换手，用紫色或粗体强调
-            color = "red"
-            if "死亡换手" in data['alert_msg']:
-                color = "purple" # Notion 支持 purple，表示更高级别的警报
+        # 排除无股本数据的
+        if s_float == 0: 
+            continue
             
-            rich_text_list.append({
-                "type": "text", 
-                "text": {"content": data['alert_msg']},
-                "annotations": {"color": color, "bold": True}
-            })
+        # 执行分类
+        res = classify_stock(ticker, stock_data, s_float)
         
-        # 补充提示
-        if not data['alert'] and data['pain_status_desc'] == "放量博弈":
-             rich_text_list.append({
-                "type": "text", 
-                "text": {"content": f"🔥 换手活跃 ({data['turnover']}%)，暂时无视痛点引力"},
-                "annotations": {"color": "blue"}
-            })
+        # 格式化输出
+        p_price = f"${stock_data.get('price')}"
+        p_ma60 = f"${stock_data.get('ma60')}"
+        p_turn = f"{res['turnover']*100:.1f}%"
+        p_status = f"{res['style']} {res['status']}"
+        
+        print(f"{ticker:<8} {p_price:<10} {p_ma60:<10} {p_turn:<10} {p_status:<15} {res['reason']}")
 
-        children_blocks = [
-            {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rich_text_list}}
-        ]
-
-        if ticker in existing_pages:
-            page_id = existing_pages[ticker]
-            notion_api("PATCH", f"/pages/{page_id}", {"properties": properties})
-            blocks = notion_api("GET", f"/blocks/{page_id}/children")
-            for block in blocks.get("results", []): notion_api("DELETE", f"/blocks/{block['id']}")
-            notion_api("PATCH", f"/blocks/{page_id}/children", {"children": children_blocks})
-            print(f"   ✅ 更新: {ticker}")
-        else:
-            new_page = {"parent": {"database_id": DATABASE_ID}, "properties": properties, "children": children_blocks}
-            notion_api("POST", "/pages", new_page)
-            print(f"   ✨ 新建: {ticker}")
-
-    # 3. 清理
-    print("🧹 [3/3] 清理废弃数据...")
-    for ticker, page_id in existing_pages.items():
-        if ticker not in processed_tickers:
-            notion_api("PATCH", f"/pages/{page_id}", {"archived": True})
-
-    print("🏁 完成！")
+    print("-" * 85)
+    print("✅ 扫描完成")
 
 if __name__ == "__main__":
-    sync_notion_data()
+    main()
