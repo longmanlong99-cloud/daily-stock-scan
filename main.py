@@ -64,10 +64,19 @@ def get_stock_data(ticker):
     # 基础数据
     price = md['price']
     ma200 = md.get('ma200', price)
-    max_pain = md.get('max_pain')
-    rsi = md.get('rsi', 50)
-    atr = md.get('atr', 0)
-    pcr = md.get('pcr', 0)
+    max_pain = md.get('max_pain') # 可以是 None
+    
+    # ### CHANGED HERE: 强制空值转换 ###
+    # 如果 get 拿到的是 None，强制转为 0 或 50
+    rsi = md.get('rsi')
+    if rsi is None: rsi = 50
+    
+    atr = md.get('atr')
+    if atr is None: atr = 0
+    
+    pcr = md.get('pcr')
+    if pcr is None: pcr = 0
+    
     turnover = (md['volume'] / share_float) if share_float else 0
     
     # --- 1. 状态判定 ---
@@ -152,7 +161,7 @@ def get_stock_data(ticker):
     }
 
 def sync_notion_data():
-    print("🚀 启动 Notion 同步 (JSON修复版)...")
+    print("🚀 启动 Notion 同步 (空值防御版)...")
     
     # 1. 扫描
     print("📋 [1/3] 扫描 Notion...")
@@ -189,7 +198,7 @@ def sync_notion_data():
             "Tags": {"multi_select": data['tags']}
         }
         
-        # --- 构造 Rich Text (修复了 annotations 位置) ---
+        # --- 构造 Rich Text ---
         rich_text_list = []
 
         # Line 1
@@ -197,7 +206,7 @@ def sync_notion_data():
         rich_text_list.append({"type": "text", "text": {"content": line1}})
 
         # Line 2
-        pcr_info = f"🐂 PCR: {data['pcr']} ({data['pcr_desc']})" if data['pcr'] else "PCR: --"
+        pcr_info = f"🐂 PCR: {data['pcr']} ({data['pcr_desc']})" if data['pcr'] > 0 else "PCR: --"
         rsi_info = f"📊 RSI: {data['rsi']} ({data['rsi_desc']})"
         line2 = f"{rsi_info} | {pcr_info}\n"
         rich_text_list.append({"type": "text", "text": {"content": line2}})
@@ -208,33 +217,27 @@ def sync_notion_data():
         line3 = f"{pain_info} | {vol_info}\n"
         rich_text_list.append({"type": "text", "text": {"content": line3}})
 
-        # 医生点评 (灰色斜体)
+        # 医生点评
         if data['commentary']:
             rich_text_list.append({
                 "type": "text", 
-                "text": {
-                    "content": "\n" + data['commentary'] + "\n"
-                },
-                "annotations": {"color": "gray", "italic": True} ### CHANGED HERE: 移到了外面 ###
+                "text": {"content": "\n" + data['commentary'] + "\n"},
+                "annotations": {"color": "gray", "italic": True}
             })
 
         # 底部信息
         rich_text_list.append({
             "type": "text", 
-            "text": {
-                "content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n"
-            },
-            "annotations": {"color": "gray"} ### CHANGED HERE: 移到了外面 ###
+            "text": {"content": f"ℹ️ 源: {data['source']} | 🕒 {cst_time}\n"},
+            "annotations": {"color": "gray"}
         })
 
         # 警报信息
         if data['alert'] and data['alert_msg']:
             rich_text_list.append({
                 "type": "text", 
-                "text": {
-                    "content": data['alert_msg']
-                },
-                "annotations": {"color": "red"} ### CHANGED HERE: 移到了外面 ###
+                "text": {"content": data['alert_msg']},
+                "annotations": {"color": "red"}
             })
 
         children_blocks = [
@@ -263,4 +266,3 @@ def sync_notion_data():
 
 if __name__ == "__main__":
     sync_notion_data()
-
