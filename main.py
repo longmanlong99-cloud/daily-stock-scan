@@ -66,8 +66,7 @@ def get_stock_data(ticker):
     ma200 = md.get('ma200', price)
     max_pain = md.get('max_pain') # 可以是 None
     
-    # ### CHANGED HERE: 强制空值转换 ###
-    # 如果 get 拿到的是 None，强制转为 0 或 50
+    # 强制空值转换
     rsi = md.get('rsi')
     if rsi is None: rsi = 50
     
@@ -89,14 +88,24 @@ def get_stock_data(ticker):
     if price > ma200 or md.get('vol_ratio', 0) > 2.0:
         status = "L2-观察池"
         
-    # L3 逻辑
+    # --- L3 逻辑 (已优化：防 NBIS 类妖股误报) ---
     pain_deviation = 0
+    is_pain_alert = False # 标记是否触发了痛点警报
+    
     if max_pain:
         pain_deviation = (price - max_pain) / max_pain
-        if abs(pain_deviation) > 0.2:
+        abs_dev = abs(pain_deviation)
+        
+        # [优化点1] 动态阈值：如果 RSI 在 45-55 震荡区，用 0.2；如果是趋势行情，放宽到 0.4
+        threshold = 0.2 if (45 <= rsi <= 55) else 0.4
+        
+        # [优化点2] 熔断机制：偏差 > 80% (0.8) 说明痛点已失效，不再报警
+        # 只有在 "阈值 < 偏差 < 80%" 时才触发警报
+        if threshold < abs_dev < 0.8:
             status = "L3-核心池"
             alert = True
-            alert_msg = f"⚡ 偏离痛点 {abs(pain_deviation):.0%} (Pain:${max_pain})"
+            is_pain_alert = True
+            alert_msg = f"⚡ 偏离痛点 {abs_dev:.0%} (Pain:${max_pain})"
     
     if turnover > 0.2:
         alert = True
@@ -131,14 +140,24 @@ def get_stock_data(ticker):
     risk_factors = []
     if rsi > 75: risk_factors.append("RSI过热")
     if pcr > 0 and pcr < 0.6: risk_factors.append("散户情绪过于狂热")
-    if abs(pain_deviation) > 0.2: risk_factors.append("价格严重偏离痛点")
+    
+    # 只有当痛点逻辑判定为“有效偏离”时，才写入风险提示
+    if is_pain_alert: 
+        risk_factors.append("价格偏离痛点需回归")
     
     if risk_factors:
         commentary += f"但 {'、'.join(risk_factors)}，谨防短期回调。"
-        if max_pain: commentary += f" 关注痛点 ${max_pain} 的牵引力。"
+        # 如果痛点有效且触发警报，才提示关注牵引力
+        if is_pain_alert and max_pain: 
+            commentary += f" 关注痛点 ${max_pain} 的牵引力。"
     else:
-        if status == "L2-观察池": commentary += "量价配合健康，可沿动态止损持有。"
-        else: commentary += "目前处于震荡观察期。"
+        # 如果是因为偏差过大(>80%)而没有触发警报，说明趋势极强
+        if max_pain and abs(pain_deviation) >= 0.8:
+            commentary += "当前动能极强，痛点引力已失效，顺势而为。"
+        elif status == "L2-观察池": 
+            commentary += "量价配合健康，可沿动态止损持有。"
+        else: 
+            commentary += "目前处于震荡观察期。"
 
     # --- 3. 标签与止损 ---
     tags.insert(0, {"name": status})
@@ -154,6 +173,7 @@ def get_stock_data(ticker):
         "source": source,
         "alert": alert, "alert_msg": alert_msg,
         "max_pain": max_pain,
+        "pain_deviation_abs": abs(pain_deviation), # 传出去用于显示颜色
         "rsi": rsi, "rsi_desc": rsi_desc,
         "pcr": pcr, "pcr_desc": pcr_desc,
         "tags": tags,
@@ -161,7 +181,7 @@ def get_stock_data(ticker):
     }
 
 def sync_notion_data():
-    print("🚀 启动 Notion 同步 (空值防御版)...")
+    print("🚀 启动 Notion 同步 (痛点逻辑优化版)...")
     
     # 1. 扫描
     print("📋 [1/3] 扫描 Notion...")
@@ -238,6 +258,14 @@ def sync_notion_data():
                 "type": "text", 
                 "text": {"content": data['alert_msg']},
                 "annotations": {"color": "red"}
+            })
+        
+        # 如果没有警报，但是痛点偏差极大(>80%)，显示一条特殊的红色提示
+        if not data['alert'] and data['max_pain'] and data['pain_deviation_abs'] >= 0.8:
+             rich_text_list.append({
+                "type": "text", 
+                "text": {"content": f"⚡ 偏离痛点 {data['pain_deviation_abs']:.0%} (趋势极强，痛点失效)"},
+                "annotations": {"color": "orange"} # 用橙色区分，表示注意但不是坏事
             })
 
         children_blocks = [
