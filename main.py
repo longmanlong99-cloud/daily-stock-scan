@@ -10,17 +10,15 @@ from datetime import datetime, timedelta
 CONFIG = {
     "LARGE_CAP_THRESHOLD": 10_000_000_000, 
     
-    # [修正1] 大盘股阈值：从 0.05 提至 0.08 (8%)
-    # 避免误杀像 CRWD/TSLA 这样换手率本来就高的活跃大盘股
-    "LARGE_CAP_TURNOVER_LIMIT": 0.08,      
+    # 换手率熔断阈值 (Turnover Limits)
+    "LARGE_CAP_TURNOVER_LIMIT": 0.08,      # 大盘股 > 8% (避免误杀活跃股)
+    "SMALL_CAP_TURNOVER_LIMIT": 0.35,      # 小盘股 > 35% (专杀 RDW 59%)
     
-    # [修正2] 小盘股阈值：从 0.20 提至 0.35 (35%)
-    # 理由：IREN 19% 是正常的。RDW 59% 才是异常的。
-    # 35% 足够过滤掉正常的活跃股，但绝对能抓住 RDW 这种“死亡换手”。
-    "SMALL_CAP_TURNOVER_LIMIT": 0.35,      
+    # 痛点偏离阈值 (Pain Deviation Limits) - 【本次核心修改】
+    "PAIN_LIMIT_LARGE": 0.15,              # 大盘股：偏离 15% 即为核心机会
+    "PAIN_LIMIT_SMALL": 0.30,              # 小盘股：偏离 30% 才算核心机会
     
-    "RSI_MAX_LIMIT": 75,
-    "PAIN_DEVIATION_LIMIT": 0.25           
+    "RSI_MAX_LIMIT": 75
 }
 
 # --- 基础配置 ---
@@ -91,7 +89,7 @@ def get_stock_data(ticker):
     turnover = (md['volume'] / share_float) if share_float else 0
     market_cap = price * share_float if share_float else 0
 
-    # --- 2. 状态判定 (瀑布流逻辑) ---
+    # --- 2. 状态判定 (智能分级逻辑) ---
 
     status = "L1-初选池"  
     tags = []
@@ -100,37 +98,44 @@ def get_stock_data(ticker):
     commentary_parts = []
     style_emoji = "⚪" 
 
-    # --- 第一层：熔断检测 (High Priority) ---
-    is_high_risk = False
+    # --- A. 确定该股票的特定阈值 (动态调整) ---
+    is_large_cap = market_cap > CONFIG["LARGE_CAP_THRESHOLD"]
     
-    # 逻辑A：大盘股熔断 (门槛提高到 8%)
-    if market_cap > CONFIG["LARGE_CAP_THRESHOLD"]:
-        if turnover > CONFIG["LARGE_CAP_TURNOVER_LIMIT"]:
-            is_high_risk = True
-            alert_msg = f"🚨 大盘股滞涨风险 ({turnover:.1%})"
-    # 逻辑B：小盘股熔断 (门槛提高到 35%)
-    else:
-        if turnover > CONFIG["SMALL_CAP_TURNOVER_LIMIT"]:
-            is_high_risk = True
-            alert_msg = f"☠️ 小盘股死亡换手 ({turnover:.1%})"
+    # 1. 换手率阈值
+    turnover_limit = CONFIG["LARGE_CAP_TURNOVER_LIMIT"] if is_large_cap else CONFIG["SMALL_CAP_TURNOVER_LIMIT"]
+    
+    # 2. 痛点偏离阈值 (本次新增：大盘15%，小盘30%)
+    pain_limit = CONFIG["PAIN_LIMIT_LARGE"] if is_large_cap else CONFIG["PAIN_LIMIT_SMALL"]
 
-    # --- 第二层：逻辑分流 ---
+    # --- B. 第一层：熔断检测 ---
+    is_high_risk = False
+    if turnover > turnover_limit:
+        is_high_risk = True
+        risk_type = "大盘股滞涨" if is_large_cap else "小盘股死亡换手"
+        alert_msg = f"☠️ {risk_type} ({turnover:.1%})"
+
+    # --- C. 第二层：逻辑分流 ---
     
+    # 计算痛点偏离度
+    pain_deviation = 0
+    if max_pain:
+        pain_deviation = (price - max_pain) / max_pain
+
     if is_high_risk:
-        # [Case 1] 触发熔断 (RDW 59% > 35%，依然会被抓)
+        # [Case 1] 触发熔断
         status = "L3-高危/异常"
         style_emoji = "🚨"
         alert = True
         tags.append({"name": "⚡高危", "color": "red"})
         commentary_parts.append(f"触发量能熔断！{alert_msg}")
 
-    elif max_pain and abs((price - max_pain) / max_pain) > CONFIG["PAIN_DEVIATION_LIMIT"]:
-        # [Case 2] 核心机会
+    elif max_pain and abs(pain_deviation) > pain_limit:
+        # [Case 2] 核心机会 (使用了动态的 pain_limit)
         status = "L3-核心池"
         style_emoji = "💎"
-        pain_dev = (price - max_pain) / max_pain
         tags.append({"name": "🧲偏离痛点", "color": "purple"})
-        commentary_parts.append(f"严重偏离痛点{abs(pain_dev):.0%}，关注主力回归")
+        # 在点评里明确显示当前使用的阈值，方便您核对
+        commentary_parts.append(f"严重偏离痛点{abs(pain_deviation):.0%} (阈值:{pain_limit:.0%})，关注回归")
 
     elif price > ma60 and rsi < CONFIG["RSI_MAX_LIMIT"]:
         # [Case 3] 观察池
@@ -142,13 +147,12 @@ def get_stock_data(ticker):
 
     else:
         # [Case 4] 初选池
-        # IREN 如果没触发熔断，也没进观察池，就会落在这里，或者进观察池(如果趋势好)
         status = "L1-初选池"
         style_emoji = "💤"
         if price <= ma60:
-            commentary_parts.append("趋势震荡或跌破均线，等待企稳")
+            commentary_parts.append("趋势震荡或跌破均线")
         elif rsi >= CONFIG["RSI_MAX_LIMIT"]:
-            commentary_parts.append(f"RSI过热({rsi})，等待回调")
+            commentary_parts.append(f"RSI过热({rsi})")
 
     # --- 3. 标签与文案完善 ---
     
@@ -197,7 +201,7 @@ def get_stock_data(ticker):
     }
 
 def sync_notion_data():
-    print("🚀 启动 Notion 同步 (阈值修正版)...")
+    print("🚀 启动 Notion 同步 (分级痛点版)...")
     
     print("📋 [1/3] 扫描 Notion...")
     existing_pages = {}
@@ -271,6 +275,7 @@ def sync_notion_data():
             {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rich_text_list}}
         ]
 
+        # 打印日志
         print(f"   {data['style']} {ticker:<6} -> {data['status']:<10} | 换手:{data['turnover']}%")
 
         if ticker in existing_pages:
