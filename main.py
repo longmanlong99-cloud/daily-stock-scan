@@ -4,13 +4,23 @@ import time
 import requests
 from datetime import datetime, timedelta
 
-# --- 策略配置 (Logic Config) ---
+# ==========================================
+# 1. 策略配置 (Strategy Config)
+# ==========================================
 CONFIG = {
     "LARGE_CAP_THRESHOLD": 10_000_000_000, 
-    "LARGE_CAP_TURNOVER_LIMIT": 0.05,      
-    "SMALL_CAP_TURNOVER_LIMIT": 0.20,      # RDW 杀手
+    
+    # [修正1] 大盘股阈值：从 0.05 提至 0.08 (8%)
+    # 避免误杀像 CRWD/TSLA 这样换手率本来就高的活跃大盘股
+    "LARGE_CAP_TURNOVER_LIMIT": 0.08,      
+    
+    # [修正2] 小盘股阈值：从 0.20 提至 0.35 (35%)
+    # 理由：IREN 19% 是正常的。RDW 59% 才是异常的。
+    # 35% 足够过滤掉正常的活跃股，但绝对能抓住 RDW 这种“死亡换手”。
+    "SMALL_CAP_TURNOVER_LIMIT": 0.35,      
+    
     "RSI_MAX_LIMIT": 75,
-    "PAIN_DEVIATION_LIMIT": 0.20           # 痛点偏离 20% 进核心池
+    "PAIN_DEVIATION_LIMIT": 0.25           
 }
 
 # --- 基础配置 ---
@@ -70,8 +80,8 @@ def get_stock_data(ticker):
     # 1. 提取基础数据
     price = md['price']
     ma200 = md.get('ma200', price)
-    ma60 = md.get('ma60', ma200)  # 中期趋势
-    ma20 = md.get('ma20', price)  # 短期趋势
+    ma60 = md.get('ma60', ma200)
+    ma20 = md.get('ma20', price)
     max_pain = md.get('max_pain')
     
     rsi = md.get('rsi') if md.get('rsi') is not None else 50
@@ -81,61 +91,67 @@ def get_stock_data(ticker):
     turnover = (md['volume'] / share_float) if share_float else 0
     market_cap = price * share_float if share_float else 0
 
-    # --- 2. 状态判定 (全逻辑恢复) ---
-    
-    # [层级 0] 默认状态：L1-初选池
-    # 只要不符合后面任何条件，就会留在这里 (相当于原来的兜底)
-    status = "L1-初选池" 
+    # --- 2. 状态判定 (瀑布流逻辑) ---
+
+    status = "L1-初选池"  
     tags = []
     alert = False
     alert_msg = ""
-    
     commentary_parts = []
+    style_emoji = "⚪" 
 
-    # [层级 1] 趋势筛选 -> L2-观察池
-    # 要求：站上 MA60 且 RSI 健康
-    if price > ma60 and rsi < CONFIG["RSI_MAX_LIMIT"]:
-        status = "L2-观察池"
-        commentary_parts.append("趋势向上(>MA60)")
-    else:
-        # 如果还在 L1，说明趋势不好
-        commentary_parts.append("趋势震荡或走弱")
-
-    # [层级 2] 核心机会 -> L3-核心池 (恢复逻辑)
-    # 逻辑：价格偏离 Max Pain 太多，有回归引力
-    pain_deviation = 0
-    if max_pain:
-        pain_deviation = (price - max_pain) / max_pain
-        if abs(pain_deviation) > CONFIG["PAIN_DEVIATION_LIMIT"]:
-            status = "L3-核心池"
-            alert = True # 核心池也是一种特别提醒
-            tags.append({"name": "🧲偏离痛点", "color": "purple"})
-            commentary_parts.append(f"严重偏离痛点{abs(pain_deviation):.0%}，关注回归")
-
-    # [层级 3] 死亡熔断 -> L3-高危/异常 (最高优先级，覆盖一切)
+    # --- 第一层：熔断检测 (High Priority) ---
     is_high_risk = False
     
-    # 大盘股熔断
+    # 逻辑A：大盘股熔断 (门槛提高到 8%)
     if market_cap > CONFIG["LARGE_CAP_THRESHOLD"]:
         if turnover > CONFIG["LARGE_CAP_TURNOVER_LIMIT"]:
             is_high_risk = True
             alert_msg = f"🚨 大盘股滞涨风险 ({turnover:.1%})"
-    # 小盘股熔断 (RDW)
+    # 逻辑B：小盘股熔断 (门槛提高到 35%)
     else:
         if turnover > CONFIG["SMALL_CAP_TURNOVER_LIMIT"]:
             is_high_risk = True
             alert_msg = f"☠️ 小盘股死亡换手 ({turnover:.1%})"
 
+    # --- 第二层：逻辑分流 ---
+    
     if is_high_risk:
+        # [Case 1] 触发熔断 (RDW 59% > 35%，依然会被抓)
         status = "L3-高危/异常"
+        style_emoji = "🚨"
         alert = True
         tags.append({"name": "⚡高危", "color": "red"})
-        # 清空之前的废话，直接警告
-        commentary_parts = [f"⚠️ 触发量能熔断！{alert_msg}，必须规避！"]
+        commentary_parts.append(f"触发量能熔断！{alert_msg}")
+
+    elif max_pain and abs((price - max_pain) / max_pain) > CONFIG["PAIN_DEVIATION_LIMIT"]:
+        # [Case 2] 核心机会
+        status = "L3-核心池"
+        style_emoji = "💎"
+        pain_dev = (price - max_pain) / max_pain
+        tags.append({"name": "🧲偏离痛点", "color": "purple"})
+        commentary_parts.append(f"严重偏离痛点{abs(pain_dev):.0%}，关注主力回归")
+
+    elif price > ma60 and rsi < CONFIG["RSI_MAX_LIMIT"]:
+        # [Case 3] 观察池
+        status = "L2-观察池"
+        style_emoji = "🟢"
+        trend_desc = "趋势向上"
+        if price > ma20: trend_desc += "且短期强势"
+        commentary_parts.append(trend_desc)
+
+    else:
+        # [Case 4] 初选池
+        # IREN 如果没触发熔断，也没进观察池，就会落在这里，或者进观察池(如果趋势好)
+        status = "L1-初选池"
+        style_emoji = "💤"
+        if price <= ma60:
+            commentary_parts.append("趋势震荡或跌破均线，等待企稳")
+        elif rsi >= CONFIG["RSI_MAX_LIMIT"]:
+            commentary_parts.append(f"RSI过热({rsi})，等待回调")
 
     # --- 3. 标签与文案完善 ---
     
-    # PCR 标签
     pcr_desc = "中性"
     if pcr > 0:
         if pcr < 0.6: 
@@ -145,7 +161,6 @@ def get_stock_data(ticker):
             pcr_desc = "悲观"
             tags.append({"name": "🐻极度悲观", "color": "gray"})
     
-    # RSI 标签
     rsi_desc = "正常"
     if rsi > 75: 
         rsi_desc = "超买"
@@ -154,15 +169,12 @@ def get_stock_data(ticker):
         rsi_desc = "超卖"
         tags.append({"name": "💎RSI超卖", "color": "green"})
 
-    # 最终点评拼接
     commentary = "👨‍⚕️ 点评: " + "，".join(commentary_parts)
     
-    # 状态标签置顶
     tags.insert(0, {"name": status})
-    if alert and status != "L3-高危/异常" and status != "L3-核心池":
+    if alert and status != "L3-高危/异常":
         tags.append({"name": "🚨警报", "color": "red"})
     
-    # 动态止损
     stop_loss = round(price - 3 * atr, 2) if atr > 0 else round(ma200 * 0.95, 2)
 
     return {
@@ -180,13 +192,13 @@ def get_stock_data(ticker):
         "pcr": pcr, 
         "pcr_desc": pcr_desc,
         "tags": tags,
-        "commentary": commentary
+        "commentary": commentary,
+        "style": style_emoji
     }
 
 def sync_notion_data():
-    print("🚀 启动 Notion 同步 (全逻辑恢复版)...")
+    print("🚀 启动 Notion 同步 (阈值修正版)...")
     
-    # 1. 扫描
     print("📋 [1/3] 扫描 Notion...")
     existing_pages = {}
     has_more = True
@@ -204,7 +216,6 @@ def sync_notion_data():
         has_more = data.get("has_more", False)
         start_cursor = data.get("next_cursor")
 
-    # 2. 更新
     print(f"🔄 [2/3] 更新 {len(WATCHLIST)} 只股票...")
     processed_tickers = []
     
@@ -221,7 +232,6 @@ def sync_notion_data():
             "Tags": {"multi_select": data['tags']}
         }
         
-        # --- Rich Text 拼接 ---
         rich_text_list = []
 
         line1 = f"💰 现价: ${data['price']} | 🛑 动态止损: ${data['stop']} (3ATR)\n"
@@ -261,19 +271,18 @@ def sync_notion_data():
             {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rich_text_list}}
         ]
 
+        print(f"   {data['style']} {ticker:<6} -> {data['status']:<10} | 换手:{data['turnover']}%")
+
         if ticker in existing_pages:
             page_id = existing_pages[ticker]
             notion_api("PATCH", f"/pages/{page_id}", {"properties": properties})
             blocks = notion_api("GET", f"/blocks/{page_id}/children")
             for block in blocks.get("results", []): notion_api("DELETE", f"/blocks/{block['id']}")
             notion_api("PATCH", f"/blocks/{page_id}/children", {"children": children_blocks})
-            print(f"   ✅ 更新: {ticker} [{data['status']}]")
         else:
             new_page = {"parent": {"database_id": DATABASE_ID}, "properties": properties, "children": children_blocks}
             notion_api("POST", "/pages", new_page)
-            print(f"   ✨ 新建: {ticker} [{data['status']}]")
 
-    # 3. 清理
     print("🧹 [3/3] 清理废弃数据...")
     for ticker, page_id in existing_pages.items():
         if ticker not in processed_tickers:
