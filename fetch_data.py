@@ -39,23 +39,28 @@ def calculate_atr(high, low, close, period=14):
 
 def calculate_options_data(ticker, stock_obj):
     """
-    🔥【核心升级】智能期权扫描：
-    1. 扫描未来 4 个到期日
-    2. 找出持仓量(OI)最大的那个日期 (锁定庄家主战场)
-    3. 如果最大持仓量太小 (<2000张)，则放弃计算，避免噪音干扰
+    🔥【专业版算法修正】
+    1. PCR (Put/Call Ratio): 计算未来 4 个到期日的【总持仓量比值】。
+       (对齐专业网站数据，样本更大更准确)
+    2. Max Pain (最大痛点): 依然锁定【单一主力合约】。
+       (因为痛点必须针对特定日期才有引力意义，不能混在一起算)
     """
     try:
         options_dates = stock_obj.options
         if not options_dates: return None, None, None
         
-        # --- 1. 智能选期逻辑 (Smart Expiration Selection) ---
-        best_expiry = None
-        max_total_oi = 0
-        best_chain = None
-        
-        # 只看最近的 4 个到期日 (通常涵盖了当周和当月的主力合约)
+        # 扫描范围：未来 4 个到期日 (涵盖近月主力)
         check_limit = min(4, len(options_dates))
         
+        # --- 变量初始化 ---
+        global_call_oi = 0  # 累计所有日期的 Call
+        global_put_oi = 0   # 累计所有日期的 Put
+        
+        best_expiry = None
+        max_single_oi = 0      # 单期最大持仓量
+        best_chain_data = None # 用来存主力合约的数据(算痛点用)
+        
+        # --- 1. 循环扫描 (累加 PCR + 寻找主力战场) ---
         for i in range(check_limit):
             expiry = options_dates[i]
             try:
@@ -64,49 +69,49 @@ def calculate_options_data(ticker, stock_obj):
                 calls = chain.calls
                 puts = chain.puts
                 
-                # 计算该到期日的总持仓量 (Call + Put)
-                current_total_oi = 0
-                if not calls.empty:
-                    current_total_oi += calls['openInterest'].sum()
-                if not puts.empty:
-                    current_total_oi += puts['openInterest'].sum()
+                # A. 累加到全局池 (用于算 Total PCR)
+                # fillna(0) 防止空数据报错
+                c_oi = calls['openInterest'].fillna(0).sum() if not calls.empty else 0
+                p_oi = puts['openInterest'].fillna(0).sum() if not puts.empty else 0
                 
-                # 擂台赛：谁大选谁
-                if current_total_oi > max_total_oi:
-                    max_total_oi = current_total_oi
+                global_call_oi += c_oi
+                global_put_oi += p_oi
+                
+                # B. 寻找主力合约 (用于算 Max Pain)
+                # 谁的持仓量最大，谁就是庄家主战场
+                current_total = c_oi + p_oi
+                if current_total > max_single_oi:
+                    max_single_oi = current_total
                     best_expiry = expiry
-                    best_chain = chain
-            except:
+                    best_chain_data = (calls, puts)
+                    
+            except Exception:
                 continue
         
-        # --- 2. 噪音过滤 (Noise Filter) ---
-        # 如果选出来的最大持仓量还是很小 (少于 2000 张)，说明这只票期权流动性太差，不具备参考价值
-        if max_total_oi < 2000: 
-            # print(f"  ⚠️ {ticker} 期权流动性不足 (OI={max_total_oi})，跳过痛点计算")
-            return None, None, None
-
-        # --- 3. 计算 Max Pain (基于选出的 Best Chain) ---
-        calls = best_chain.calls[['strike', 'openInterest']].dropna()
-        puts = best_chain.puts[['strike', 'openInterest']].dropna()
+        # --- 2. 计算 Total PCR (涵盖 4 期) ---
+        # 现在的 PCR 是基于未来一个月的总量计算的，非常稳定且具备参考性
+        pcr = round(global_put_oi / global_call_oi, 2) if global_call_oi > 0 else 0
         
-        if calls.empty or puts.empty: return None, None, None
+        # --- 3. 噪音过滤 & 痛点计算 ---
+        # 如果连主力合约都没量 (<2000张)，说明这票没人玩期权，痛点无效
+        if max_single_oi < 2000 or best_chain_data is None:
+            # 返回 None 的痛点，但返回计算好的 PCR (PCR 还是有参考价值的)
+            return None, None, pcr 
 
-        # 计算 PCR (情绪指标)
-        total_call_oi = calls['openInterest'].sum()
-        total_put_oi = puts['openInterest'].sum()
-        pcr = round(total_put_oi / total_call_oi, 2) if total_call_oi > 0 else 0
+        # 提取主力合约数据
+        calls_best, puts_best = best_chain_data
+        calls_best = calls_best[['strike', 'openInterest']].dropna()
+        puts_best = puts_best[['strike', 'openInterest']].dropna()
 
-        # 计算 Max Pain (穷举法)
-        all_strikes = sorted(list(set(calls['strike'].tolist() + puts['strike'].tolist())))
+        # 计算 Max Pain (仅基于主力合约)
+        all_strikes = sorted(list(set(calls_best['strike'].tolist() + puts_best['strike'].tolist())))
         min_loss = float('inf')
         max_pain_price = 0
         
         for s in all_strikes:
             # 假设收盘价是 s，卖方亏多少
-            # Call损失 = (股价 - 行权价) * 持仓量
-            call_loss = np.maximum(0, s - calls['strike']) * calls['openInterest']
-            # Put损失 = (行权价 - 股价) * 持仓量
-            put_loss = np.maximum(0, puts['strike'] - s) * puts['openInterest']
+            call_loss = np.maximum(0, s - calls_best['strike']) * calls_best['openInterest']
+            put_loss = np.maximum(0, puts_best['strike'] - s) * puts_best['openInterest']
             
             total_loss = call_loss.sum() + put_loss.sum()
             
@@ -159,7 +164,7 @@ for ticker in WATCHLIST:
         atr_series = calculate_atr(hist['High'], hist['Low'], hist['Close'])
         atr = round(atr_series.iloc[-1], 2) if not pd.isna(atr_series.iloc[-1]) else 0
         
-        # 🔥 调用升级后的期权计算函数
+        # 🔥 调用升级后的期权计算函数 (4期PCR + 单期痛点)
         max_pain, expiry, pcr = calculate_options_data(ticker, stock)
         
         # 4. 存入缓存
@@ -177,11 +182,11 @@ for ticker in WATCHLIST:
             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         
-        # 打印简报 (如果算出了痛点就显示，没算出就不显示)
+        # 打印简报
         pain_info = f"Pain:${max_pain}" if max_pain else "Pain:--"
-        print(f" ✅ ${current_price} | MA60:${round(ma60, 1)} | {pain_info}")
+        print(f" ✅ ${current_price} | RSI:{rsi} | PCR:{pcr} | {pain_info}")
         
-        time.sleep(1.5) # 保持节奏，防止被封
+        time.sleep(1.5) # 保持防封节奏
         
     except Exception as e:
         print(f" ❌ Error: {e}")
@@ -191,4 +196,4 @@ for ticker in WATCHLIST:
 # ==========================================
 with open("daily_cache.json", "w") as f:
     json.dump(DATA_CACHE, f, indent=4)
-print("💾 数据已更新，包含 MA20/MA60 及智能期权痛点数据。")
+print("💾 数据已更新，包含升级版 PCR 和痛点数据。")
