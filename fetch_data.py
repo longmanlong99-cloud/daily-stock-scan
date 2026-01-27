@@ -50,7 +50,7 @@ def calculate_options_data(ticker, stock_obj):
         if not options_dates: return None, None, None
         
         # 扫描范围：未来 4 个到期日 (涵盖近月主力)
-        check_limit = min(4, len(options_dates))
+        check_limit = min(8, len(options_dates))
         
         # --- 变量初始化 ---
         global_call_oi = 0  # 累计所有日期的 Call
