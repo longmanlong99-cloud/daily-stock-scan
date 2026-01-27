@@ -19,5 +19,5 @@ jobs:
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
-          retain_days: 2           # 👈 这里设置保留几天（比如2天）
+          retain_days: 0           # 👈 这里设置保留几天（比如2天）
           keep_minimum_runs: 3     # 👈这里设置最少保留几个（防止全删光了，哪怕过了2天也留6个备查）
