@@ -16,7 +16,7 @@ CONFIG = {
     
     # 痛点偏离阈值 (Pain Deviation Limits) - 【本次核心修改】
     "PAIN_LIMIT_LARGE": 0.15,              # 大盘股：偏离 15% 即为核心机会
-    "PAIN_LIMIT_SMALL": 0.30,              # 小盘股：偏离 30% 才算核心机会
+    "PAIN_LIMIT_SMALL": 0.35,              # 小盘股：偏离 30% 才算核心机会
     
     "RSI_MAX_LIMIT": 75
 }
@@ -297,3 +297,4 @@ def sync_notion_data():
 
 if __name__ == "__main__":
     sync_notion_data()
+
